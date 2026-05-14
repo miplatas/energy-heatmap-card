@@ -1,0 +1,8 @@
+{
+  "name": "Energy Heatmap Card",
+  "description": "Tarjeta Lovelace que muestra un mapa de calor de energía (importada, exportada o neta) de los últimos N días. Soporte automático de tema oscuro/claro.",
+  "version": "1.1.0",
+  "content_in_root": false,
+  "render_readme": false,
+  "filename": "energy-heatmap-card.js"
+}
