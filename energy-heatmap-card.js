@@ -18,7 +18,7 @@
  * v1.0.0 - Versión inicial
  */
 
-const CARD_VERSION = "1.1.1";
+const CARD_VERSION = "1.2.0";
 
 // ─── Paletas de color por tema ────────────────────────────────────────────────
 const THEMES = {
@@ -520,6 +520,27 @@ class EnergyHeatmapCard extends HTMLElement {
           color: var(--primary-text-color, ${t.primaryText});
         }
 
+        .csv-btn {
+          background: none;
+          border: 1px solid ${modeColor}55;
+          border-radius: 6px;
+          color: ${modeColor};
+          font-size: 0.65rem;
+          padding: 3px 8px;
+          cursor: pointer;
+          font-family: 'JetBrains Mono', monospace;
+          transition: all 0.2s;
+        }
+
+        .csv-btn:hover {
+          background: ${modeColor}18;
+        }
+
+        .footer-btns {
+          display: flex;
+          gap: 6px;
+        }
+
         .tooltip {
           position: fixed;
           background: ${t.tooltipBg};
@@ -587,7 +608,10 @@ class EnergyHeatmapCard extends HTMLElement {
 
         <div class="footer">
           <div class="footer-days">Últimos ${this._days} días · Reset 12:00</div>
-          <button class="refresh-btn" id="refresh-btn">↻ Actualizar</button>
+          <div class="footer-btns">
+            <button class="csv-btn" id="csv-btn">⬇ CSV</button>
+            <button class="refresh-btn" id="refresh-btn">↻ Actualizar</button>
+          </div>
         </div>
       </ha-card>
 
@@ -616,6 +640,31 @@ class EnergyHeatmapCard extends HTMLElement {
     // Refresh
     const btn = this.shadowRoot.getElementById("refresh-btn");
     if (btn) btn.addEventListener("click", () => { this._initialized = false; this._fetchHistory(); });
+
+    // CSV download
+    const csvBtn = this.shadowRoot.getElementById("csv-btn");
+    if (csvBtn) csvBtn.addEventListener("click", () => this._downloadCSV(data, mode, unit));
+  }
+
+  _downloadCSV(data, mode, unit) {
+    const modeLabel = { imported:"Importada", exported:"Exportada", net:"Neta" }[mode] || "Neta";
+    const rows = [
+      ["Fecha", "Día", `Energía ${modeLabel} (${unit})`],
+      ...data.map(d => {
+        const date = new Date(d.date + "T12:00:00");
+        const dayName = date.toLocaleDateString("es-MX", { weekday: "long" });
+        return [d.date, dayName, d.value !== null ? d.value.toFixed(2) : ""];
+      })
+    ];
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM para Excel
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const today = new Date().toISOString().slice(0, 10);
+    a.href     = url;
+    a.download = `energia-${mode}-${today}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   _renderError(msg) {
