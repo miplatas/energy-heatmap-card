@@ -18,7 +18,7 @@
  * v1.0.0 - Versión inicial
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.1.1";
 
 // ─── Paletas de color por tema ────────────────────────────────────────────────
 const THEMES = {
@@ -91,8 +91,8 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config.entity_imported && !config.entity_net) {
-      throw new Error("Debes configurar al menos entity_imported o entity_net");
+    if (!config.entity_imported && !config.entity_net && !config.entity_exported) {
+      throw new Error("Debes configurar al menos entity_imported, entity_exported o entity_net");
     }
     this._config = {
       title: "Energía",
