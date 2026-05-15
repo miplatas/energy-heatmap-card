@@ -1,93 +1,137 @@
 # Energy Heatmap Card
 
-Tarjeta personalizada para Home Assistant (Lovelace) que muestra un **mapa de calor** de los últimos N días de energía.
+Custom Home Assistant (Lovelace) card that shows an **energy heatmap** for the last N days.
 
-Diseñada para sensores que se **resetean diariamente a las 12:00** (el valor acumulado del día se toma como el máximo registrado antes del reset).
+Built for daily energy sensors, including setups that reset at 12:00.
 
 ---
 
-## Instalación manual
+## Features
 
-1. Copia `energy-heatmap-card.js` a tu carpeta:
+- Three display modes: `net`, `imported`, `exported`
+- Daily aggregation by mode:
+  - `imported` and `exported`: daily **maximum** value
+  - `net`: daily **last state** value (end-of-day balance)
+- Auto light/dark theme support (follows Home Assistant theme)
+- Hover tooltip with exact date and value
+- Summary stats: average/day, maximum, total for selected range
+- Heatmap legend with mode-aware colors
+- In-card controls:
+  - **CSV export** button
+  - **Refresh** button
+
+---
+
+## Manual installation
+
+1. Copy [energy-heatmap-card.js](energy-heatmap-card.js) into:
    ```
    config/www/community/energy-heatmap-card/energy-heatmap-card.js
    ```
 
-2. En Home Assistant ve a **Ajustes → Dashboards → Recursos** y agrega:
+2. In Home Assistant go to **Settings -> Dashboards -> Resources** and add:
    - URL: `/local/community/energy-heatmap-card/energy-heatmap-card.js`
-   - Tipo: **JavaScript module**
+   - Type: **JavaScript module**
 
-3. Reinicia o recarga la interfaz.
-
----
-
-## Instalación vía HACS
-
-1. En HACS → Frontend → Menú (⋮) → **Repositorios personalizados**
-2. Pega la URL de tu repositorio GitHub
-3. Categoría: **Lovelace**
-4. Instala y recarga
+3. Restart or reload the UI.
 
 ---
 
-## Configuración YAML
+## HACS installation
+
+1. In HACS -> Frontend -> menu (⋮) -> **Custom repositories**
+2. Paste your GitHub repository URL
+3. Category: **Lovelace**
+4. Install and reload
+
+---
+
+## YAML configuration
 
 ```yaml
 type: custom:energy-heatmap-card
-title: "Energía Casa"
-entity_imported: sensor.energia_importada
-entity_exported: sensor.energia_exportada
-entity_net: sensor.energia_neta
-mode: net          # opciones: net | imported | exported
+title: "Home Energy"
+entity_imported: sensor.energy_imported
+entity_exported: sensor.energy_exported
+entity_net: sensor.energy_net
+mode: net          # options: net | imported | exported
 unit: kWh
-days: 60           # opcional, default: 60
+days: 60           # optional, default: 60
 ```
 
-### Parámetros
+### Parameters
 
-| Parámetro         | Requerido | Default             | Descripción                                          |
-|-------------------|-----------|---------------------|------------------------------------------------------|
-| `entity_imported` | Sí*       | —                   | Sensor de energía importada                          |
-| `entity_exported` | No        | —                   | Sensor de energía exportada                          |
-| `entity_net`      | Sí*       | —                   | Sensor de energía neta (importada − exportada)       |
-| `mode`            | No        | `net`               | Qué sensor mostrar: `net`, `imported`, `exported`    |
-| `title`           | No        | `"Energía"`         | Título de la tarjeta                                 |
-| `unit`            | No        | `kWh`               | Unidad de medida                                     |
-| `days`            | No        | `60`                | Número de días a mostrar                             |
+| Parameter         | Required      | Default  | Description                                       |
+|------------------|---------------|----------|---------------------------------------------------|
+| `entity_imported`| Conditional*  | —        | Imported energy sensor                            |
+| `entity_exported`| Conditional*  | —        | Exported energy sensor                            |
+| `entity_net`     | Conditional*  | —        | Net energy sensor (imported - exported)           |
+| `mode`           | No       | `net`    | Sensor to display: `net`, `imported`, `exported` |
+| `title`          | No       | `Energy` | Card title                                        |
+| `unit`           | No       | `kWh`    | Unit of measurement                               |
+| `days`           | No       | `60`     | Number of days to display                         |
 
-*Al menos uno de `entity_imported` o `entity_net` es requerido.
-
----
-
-## Cómo funciona
-
-- Consulta el historial de la entidad usando la API de Home Assistant
-- Para cada día agrupa todos los estados y toma el **valor máximo** (el acumulado final antes del reset de las 12:00)
-- Mapea los valores a un gradiente de color:
-  - **Modo net**: verde (exportando) → negro (cero) → naranja/rojo (importando)
-  - **Modo imported**: degradado naranja (más claro = menos consumo)
-  - **Modo exported**: degradado verde (más claro = menos exportación)
-- Al pasar el cursor sobre una celda se muestra tooltip con fecha y valor exacto
+*At least one of `entity_imported`, `entity_exported`, or `entity_net` must be configured.
 
 ---
 
-## Ejemplos de configuración
+## Data model and daily calculation
 
-### Solo energía neta (recomendado)
+- Fetches the selected entity history using the Home Assistant API.
+- For each day, groups all states and computes the daily value:
+  - In `imported` and `exported` modes, uses the **daily maximum** (final cumulative value before reset).
+  - In `net` mode, uses the **last state of the day** (real daily balance, imported - exported).
+- Maps values to a color gradient:
+  - **`net` mode**: green (exporting) -> dark center (zero) -> orange/red (importing)
+  - **`imported` mode**: orange gradient (lighter = lower consumption)
+  - **`exported` mode**: green gradient (lighter = lower export)
+
+---
+
+## CSV export
+
+Use the **CSV** button on the card footer to download visible data.
+
+- Filename format: `energy-<mode>-<yyyy-mm-dd>.csv`
+- Encoding: UTF-8 with BOM (Excel-friendly)
+- Columns:
+  - `Date`
+  - `Day`
+  - `Energy <Mode> (<unit>)`
+
+Example filename:
+
+```text
+energy-net-2026-05-14.csv
+```
+
+---
+
+## Manual refresh
+
+Use the **Refresh** button to re-fetch history immediately without reloading the whole dashboard.
+
+---
+
+## Configuration examples
+
+### Net energy only (recommended)
+
 ```yaml
 type: custom:energy-heatmap-card
-title: "Energía Neta"
-entity_net: sensor.energia_neta_diaria
+title: "Net Energy"
+entity_net: sensor.energy_net_daily
 mode: net
 unit: kWh
 days: 60
 ```
 
-### Solo importación
+### Imported energy only
+
 ```yaml
 type: custom:energy-heatmap-card
-title: "Consumo de Red"
-entity_imported: sensor.energia_importada
+title: "Grid Consumption"
+entity_imported: sensor.energy_imported
 mode: imported
 unit: kWh
 days: 30
@@ -95,11 +139,12 @@ days: 30
 
 ---
 
-## Notas
+## Notes
 
-- El historial debe estar habilitado en Home Assistant (`recorder`)
-- Los sensores tipo `utility_meter` que resetean a las 12:00 funcionan perfectamente
-- Para 60 días se puede necesitar ajustar `purge_keep_days` en la config del recorder:
+- History must be enabled in Home Assistant (`recorder`).
+- `utility_meter` sensors that reset daily at 12:00 work very well.
+- For 60 days of data, you may need to increase recorder retention:
+
   ```yaml
   recorder:
     purge_keep_days: 90

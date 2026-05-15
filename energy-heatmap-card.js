@@ -1,26 +1,26 @@
 /**
  * Energy Heatmap Card v1.1.0
- * Tarjeta Lovelace para Home Assistant
- * Muestra un mapa de calor de los últimos N días de energía importada/exportada/neta
+ * Lovelace card for Home Assistant
+ * Displays a heatmap for the last N days of imported/exported/net energy
  *
- * Configuración YAML:
+ * YAML configuration:
  * type: custom:energy-heatmap-card
- * entity_imported: sensor.energia_importada
- * entity_exported: sensor.energia_exportada
- * entity_net: sensor.energia_neta
- * title: "Mapa de Calor - Energía"
+ * entity_imported: sensor.energy_imported
+ * entity_exported: sensor.energy_exported
+ * entity_net: sensor.energy_net
+ * title: "Energy Heatmap"
  * mode: net           # imported | exported | net
  * unit: kWh
  * days: 60
  *
  * Changelog:
- * v1.1.0 - Soporte automático de tema oscuro/claro (sigue el tema de HA)
- * v1.0.0 - Versión inicial
+ * v1.1.0 - Automatic light/dark theme support (follows HA theme)
+ * v1.0.0 - Initial version
  */
 
 const CARD_VERSION = "1.2.0";
 
-// ─── Paletas de color por tema ────────────────────────────────────────────────
+// ─── Theme color palettes ─────────────────────────────────────────────────────
 const THEMES = {
   dark: {
     cardBg:           "#12121f",
@@ -80,10 +80,10 @@ class EnergyHeatmapCard extends HTMLElement {
 
   static getStubConfig() {
     return {
-      entity_imported: "sensor.energia_importada",
-      entity_exported: "sensor.energia_exportada",
-      entity_net:      "sensor.energia_neta",
-      title:           "Energía - Últimos 60 días",
+      entity_imported: "sensor.energy_imported",
+      entity_exported: "sensor.energy_exported",
+      entity_net:      "sensor.energy_net",
+      title:           "Energy - Last 60 Days",
       mode:            "net",
       unit:            "kWh",
       days:            60,
@@ -92,10 +92,10 @@ class EnergyHeatmapCard extends HTMLElement {
 
   setConfig(config) {
     if (!config.entity_imported && !config.entity_net && !config.entity_exported) {
-      throw new Error("Debes configurar al menos entity_imported, entity_exported o entity_net");
+      throw new Error("You must configure at least entity_imported, entity_exported, or entity_net");
     }
     this._config = {
-      title: "Energía",
+      title: "Energy",
       mode:  "net",
       unit:  "kWh",
       days:  60,
@@ -119,34 +119,34 @@ class EnergyHeatmapCard extends HTMLElement {
     }
   }
 
-  // ─── Detectar tema ────────────────────────────────────────────────────────
-  // Tres métodos en cascada para máxima compatibilidad con versiones de HA.
+  // ─── Theme detection ───────────────────────────────────────────────────────
+  // Three fallback methods for maximum compatibility across HA versions.
   _detectTheme() {
-    // 1. API oficial (HA 2021.6+)
+    // 1. Official API (HA 2021.6+)
     if (this._hass?.themes) {
       if (typeof this._hass.themes.darkMode === "boolean") {
         return this._hass.themes.darkMode ? "dark" : "light";
       }
     }
 
-    // 2. Variable CSS del documento host
+    // 2. CSS variable from the host document
     try {
       const bg = getComputedStyle(document.documentElement)
         .getPropertyValue("--primary-background-color").trim();
       if (bg) return this._isColorDark(bg) ? "dark" : "light";
     } catch (_) {}
 
-    // 3. Variable CSS del propio elemento
+    // 3. CSS variable from this element
     try {
       const bg = getComputedStyle(this)
         .getPropertyValue("--primary-background-color").trim();
       if (bg) return this._isColorDark(bg) ? "dark" : "light";
     } catch (_) {}
 
-    return "dark"; // fallback seguro
+    return "dark"; // safe fallback
   }
 
-  // Luminancia relativa (WCAG) vía canvas 1×1
+  // Relative luminance (WCAG) via 1x1 canvas
   _isColorDark(color) {
     try {
       const c = document.createElement("canvas");
@@ -161,7 +161,7 @@ class EnergyHeatmapCard extends HTMLElement {
     }
   }
 
-  // ─── Historial ────────────────────────────────────────────────────────────
+  // ─── History ───────────────────────────────────────────────────────────────
   async _fetchHistory() {
     if (!this._hass) return;
 
@@ -176,7 +176,7 @@ class EnergyHeatmapCard extends HTMLElement {
     else                          entityId = this._config.entity_net || this._config.entity_imported;
 
     if (!entityId) {
-      this._renderError("No se encontró la entidad para el modo: " + mode);
+      this._renderError("Entity not found for mode: " + mode);
       return;
     }
 
@@ -186,15 +186,15 @@ class EnergyHeatmapCard extends HTMLElement {
         `history/period/${start.toISOString()}?end_time=${end.toISOString()}&filter_entity_id=${entityId}&minimal_response=true`
       );
       if (!history || !history[0]) { this._data = []; this._render([]); return; }
-      this._data = this._processHistory(history[0]);
+      this._data = this._processHistory(history[0], mode);
       this._render(this._data);
     } catch (err) {
-      console.error("EnergyHeatmapCard: Error al obtener historial", err);
-      this._renderError("Error al obtener historial: " + err.message);
+      console.error("EnergyHeatmapCard: Error fetching history", err);
+      this._renderError("Error fetching history: " + err.message);
     }
   }
 
-  _processHistory(states) {
+  _processHistory(states, mode = "net") {
     const byDay = {};
     for (const state of states) {
       if (state.state === "unavailable" || state.state === "unknown") continue;
@@ -202,7 +202,19 @@ class EnergyHeatmapCard extends HTMLElement {
       if (isNaN(val)) continue;
       const dt  = new Date(state.last_changed || state.last_updated);
       const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
-      if (!byDay[key] || val > byDay[key].value) byDay[key] = { value: val };
+
+      if (!byDay[key]) {
+        byDay[key] = { value: val, ts: dt.getTime() };
+        continue;
+      }
+
+      if (mode === "net") {
+        // Net represents daily balance, so we must use the last state of the day.
+        if (dt.getTime() >= byDay[key].ts) byDay[key] = { value: val, ts: dt.getTime() };
+      } else {
+        // Imported/Exported are daily accumulators: daily max equals final daily value.
+        if (val > byDay[key].value) byDay[key] = { value: val, ts: byDay[key].ts };
+      }
     }
     const result = [];
     for (let i = this._days - 1; i >= 0; i--) {
@@ -220,7 +232,7 @@ class EnergyHeatmapCard extends HTMLElement {
     return result;
   }
 
-  // ─── Colores del heatmap ──────────────────────────────────────────────────
+  // ─── Heatmap colors ────────────────────────────────────────────────────────
   _getColor(value, min, max, mode, theme) {
     const t = THEMES[theme];
     if (value === null) return t.emptyCellBg;
@@ -243,11 +255,11 @@ class EnergyHeatmapCard extends HTMLElement {
     return `rgba(234,88,12,${0.15 + ratio * 0.85})`;
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Render ────────────────────────────────────────────────────────────────
   _render(data) {
     const mode  = this._config.mode  || "net";
     const unit  = this._config.unit  || "kWh";
-    const title = this._config.title || "Energía";
+    const title = this._config.title || "Energy";
     const theme = this._theme;
     const t     = THEMES[theme];
 
@@ -257,7 +269,7 @@ class EnergyHeatmapCard extends HTMLElement {
     const avg    = values.length ? values.reduce((a,b) => a+b, 0) / values.length : 0;
     const total  = values.reduce((a,b) => a+b, 0);
 
-    const modeLabel = { imported:"Importada", exported:"Exportada", net:"Neta" }[mode] || "Neta";
+    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
     const modeColor = { imported:"#ea580c",   exported:"#16a34a",   net:"#3b82f6" }[mode] || "#3b82f6";
 
     // Grid
@@ -276,12 +288,12 @@ class EnergyHeatmapCard extends HTMLElement {
         data-date="${cell.date}"></div>`;
     }
 
-    // Leyenda
+    // Legend
     let legendStops = "";
     if (mode === "net") {
       legendStops = `
         <div class="legend-bar" style="background:linear-gradient(to right,rgba(22,163,74,0.9),rgba(22,163,74,0.15),${t.legendNetCenter},rgba(234,88,12,0.15),rgba(220,38,38,0.9))"></div>
-        <div class="legend-labels"><span>Exportando</span><span>0</span><span>Importando</span></div>`;
+        <div class="legend-labels"><span>Exporting</span><span>0</span><span>Importing</span></div>`;
     } else if (mode === "exported") {
       legendStops = `
         <div class="legend-bar" style="background:linear-gradient(to right,rgba(22,163,74,0.15),rgba(22,163,74,0.9))"></div>
@@ -292,8 +304,8 @@ class EnergyHeatmapCard extends HTMLElement {
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     }
 
-    // Meses
-    const monthNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    // Months
+    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     let monthLabels = ""; let lastMonth = -1; let colIdx = 0;
     for (let c = 0; c < cells.length; c += 7) {
       const cell = cells[c];
@@ -304,7 +316,7 @@ class EnergyHeatmapCard extends HTMLElement {
       colIdx++;
     }
 
-    const dayLabels = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+    const dayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const cellMinPx = 14;
 
     this.shadowRoot.innerHTML = `
@@ -575,11 +587,11 @@ class EnergyHeatmapCard extends HTMLElement {
         ${values.length > 0 ? `
         <div class="stats-row">
           <div class="stat-box">
-            <div class="stat-label">Promedio/día</div>
+            <div class="stat-label">Average/day</div>
             <div class="stat-value">${avg.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
           </div>
           <div class="stat-box">
-            <div class="stat-label">Máximo</div>
+            <div class="stat-label">Maximum</div>
             <div class="stat-value">${max.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
           </div>
           <div class="stat-box">
@@ -602,15 +614,15 @@ class EnergyHeatmapCard extends HTMLElement {
 
         ${values.length > 0 ? `
         <div class="legend">
-          <div class="legend-title">Intensidad</div>
+          <div class="legend-title">Intensity</div>
           ${legendStops}
-        </div>` : `<div class="no-data">No hay datos históricos disponibles</div>`}
+        </div>` : `<div class="no-data">No historical data available</div>`}
 
         <div class="footer">
-          <div class="footer-days">Últimos ${this._days} días · Reset 12:00</div>
+          <div class="footer-days">Last ${this._days} days · Reset 12:00</div>
           <div class="footer-btns">
             <button class="csv-btn" id="csv-btn">⬇ CSV</button>
-            <button class="refresh-btn" id="refresh-btn">↻ Actualizar</button>
+            <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
           </div>
         </div>
       </ha-card>
@@ -623,9 +635,9 @@ class EnergyHeatmapCard extends HTMLElement {
     this.shadowRoot.querySelectorAll(".hm-cell:not(.empty)").forEach(cell => {
       cell.addEventListener("mouseenter", e => {
         const d = new Date(cell.dataset.date + "T12:00:00");
-        const dateStr = d.toLocaleDateString("es-MX", { weekday:"short", year:"numeric", month:"short", day:"numeric" });
+        const dateStr = d.toLocaleDateString("en-US", { weekday:"short", year:"numeric", month:"short", day:"numeric" });
         const val = cell.dataset.value;
-        tooltip.innerHTML = `<strong>${dateStr}</strong><br>${val ? val + " " + unit : "Sin datos"}`;
+        tooltip.innerHTML = `<strong>${dateStr}</strong><br>${val ? val + " " + unit : "No data"}`;
         tooltip.style.display = "block";
         tooltip.style.left = e.clientX + 14 + "px";
         tooltip.style.top  = e.clientY - 44 + "px";
@@ -647,22 +659,22 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   _downloadCSV(data, mode, unit) {
-    const modeLabel = { imported:"Importada", exported:"Exportada", net:"Neta" }[mode] || "Neta";
+    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
     const rows = [
-      ["Fecha", "Día", `Energía ${modeLabel} (${unit})`],
+      ["Date", "Day", `Energy ${modeLabel} (${unit})`],
       ...data.map(d => {
         const date = new Date(d.date + "T12:00:00");
-        const dayName = date.toLocaleDateString("es-MX", { weekday: "long" });
+        const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
         return [d.date, dayName, d.value !== null ? d.value.toFixed(2) : ""];
       })
     ];
     const csv = rows.map(r => r.join(",")).join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM para Excel
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM for Excel compatibility
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     const today = new Date().toISOString().slice(0, 10);
     a.href     = url;
-    a.download = `energia-${mode}-${today}.csv`;
+    a.download = `energy-${mode}-${today}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -677,7 +689,7 @@ class EnergyHeatmapCard extends HTMLElement {
   getCardSize() { return 4; }
 }
 
-// ─── Editor (base para UI visual de HA) ──────────────────────────────────────
+// ─── Editor (base for HA visual UI) ──────────────────────────────────────────
 class EnergyHeatmapCardEditor extends HTMLElement {
   setConfig(config) { this._config = config; }
 }
@@ -689,9 +701,9 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type:             "energy-heatmap-card",
   name:             "Energy Heatmap Card",
-  description:      "Mapa de calor de energía importada/exportada/neta. Tema oscuro/claro automático.",
+  description:      "Heatmap for imported/exported/net energy. Automatic light/dark theme support.",
   preview:          false,
-  documentationURL: "https://github.com/tu-usuario/energy-heatmap-card",
+  documentationURL: "https://github.com/your-username/energy-heatmap-card",
 });
 
 console.info(
