@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.1.0
+ * Energy Heatmap Card v1.2.0
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -14,6 +14,7 @@
  * days: 60
  *
  * Changelog:
+ * v1.2.0 - Fix month label alignment (offset + day-labels column compensation)
  * v1.1.0 - Automatic light/dark theme support (follows HA theme)
  * v1.0.0 - Initial version
  */
@@ -120,33 +121,25 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   // ─── Theme detection ───────────────────────────────────────────────────────
-  // Three fallback methods for maximum compatibility across HA versions.
   _detectTheme() {
-    // 1. Official API (HA 2021.6+)
     if (this._hass?.themes) {
       if (typeof this._hass.themes.darkMode === "boolean") {
         return this._hass.themes.darkMode ? "dark" : "light";
       }
     }
-
-    // 2. CSS variable from the host document
     try {
       const bg = getComputedStyle(document.documentElement)
         .getPropertyValue("--primary-background-color").trim();
       if (bg) return this._isColorDark(bg) ? "dark" : "light";
     } catch (_) {}
-
-    // 3. CSS variable from this element
     try {
       const bg = getComputedStyle(this)
         .getPropertyValue("--primary-background-color").trim();
       if (bg) return this._isColorDark(bg) ? "dark" : "light";
     } catch (_) {}
-
-    return "dark"; // safe fallback
+    return "dark";
   }
 
-  // Relative luminance (WCAG) via 1x1 canvas
   _isColorDark(color) {
     try {
       const c = document.createElement("canvas");
@@ -209,10 +202,8 @@ class EnergyHeatmapCard extends HTMLElement {
       }
 
       if (mode === "net") {
-        // Net represents daily balance, so we must use the last state of the day.
         if (dt.getTime() >= byDay[key].ts) byDay[key] = { value: val, ts: dt.getTime() };
       } else {
-        // Imported/Exported are daily accumulators: daily max equals final daily value.
         if (val > byDay[key].value) byDay[key] = { value: val, ts: byDay[key].ts };
       }
     }
@@ -304,14 +295,19 @@ class EnergyHeatmapCard extends HTMLElement {
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     }
 
-    // Months
+    // ─── Month labels (fix: busca primera celda real por columna, +2 por day-labels col) ───
     const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    let monthLabels = ""; let lastMonth = -1; let colIdx = 0;
+    let monthLabels = "";
+    let lastMonth   = -1;
+    let colIdx      = 0;
+
     for (let c = 0; c < cells.length; c += 7) {
-      const cell = cells[c];
-      if (cell && !cell.empty && cell.month !== lastMonth) {
+      // Primera celda NO vacía dentro de este grupo de 7 días
+      const cell = cells.slice(c, c + 7).find(x => x && !x.empty);
+      if (cell && cell.month !== lastMonth) {
         lastMonth = cell.month;
-        monthLabels += `<span class="month-label" style="grid-column:${colIdx+1}">${monthNames[cell.month]}</span>`;
+        // +2: col 1 es el div vacío del espaciado de day-labels
+        monthLabels += `<span class="month-label" style="grid-column:${colIdx + 2}">${monthNames[cell.month]}</span>`;
       }
       colIdx++;
     }
@@ -669,7 +665,7 @@ class EnergyHeatmapCard extends HTMLElement {
       })
     ];
     const csv = rows.map(r => r.join(",")).join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM for Excel compatibility
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     const today = new Date().toISOString().slice(0, 10);
