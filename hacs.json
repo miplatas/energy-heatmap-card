@@ -1,7 +1,7 @@
 {
   "name": "Energy Heatmap Card",
   "description": "Lovelace card that shows an energy heatmap (imported, exported, or net) for the last N days. Automatic light/dark theme support.",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "content_in_root": false,
   "render_readme": false,
   "filename": "energy-heatmap-card.js"

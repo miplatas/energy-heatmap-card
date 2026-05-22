@@ -215,6 +215,7 @@ class EnergyHeatmapCard extends HTMLElement {
       result.push({
         date:       key,
         value:      byDay[key] ? byDay[key].value : null,
+        year:       d.getFullYear(),
         dayOfWeek:  d.getDay(),
         month:      d.getMonth(),
         dayOfMonth: d.getDate(),
@@ -295,21 +296,27 @@ class EnergyHeatmapCard extends HTMLElement {
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     }
 
-    // ─── Month labels (fix: busca primera celda real por columna, +2 por day-labels col) ───
+    // ─── Month labels (anchor each month to its first visible week-column) ───
     const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     let monthLabels = "";
-    let lastMonth   = -1;
-    let colIdx      = 0;
+    const monthFirstCol = new Map();
 
-    for (let c = 0; c < cells.length; c += 7) {
-      // Primera celda NO vacía dentro de este grupo de 7 días
-      const cell = cells.slice(c, c + 7).find(x => x && !x.empty);
-      if (cell && cell.month !== lastMonth) {
-        lastMonth = cell.month;
-        // +2: col 1 es el div vacío del espaciado de day-labels
-        monthLabels += `<span class="month-label" style="grid-column:${colIdx + 2}">${monthNames[cell.month]}</span>`;
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      if (!cell || cell.empty) continue;
+
+      const monthKey = `${cell.year}-${cell.month}`;
+      if (!monthFirstCol.has(monthKey)) {
+        monthFirstCol.set(monthKey, {
+          month: cell.month,
+          colIdx: Math.floor(i / 7),
+        });
       }
-      colIdx++;
+    }
+
+    for (const { month, colIdx } of monthFirstCol.values()) {
+      // +2: col 1 is the spacer column used by day labels
+      monthLabels += `<span class="month-label" style="grid-column:${colIdx + 2}">${monthNames[month]}</span>`;
     }
 
     const dayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
