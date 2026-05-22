@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.2.6
+ * Energy Heatmap Card v1.2.8
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -14,6 +14,7 @@
  * days: 60
  *
  * Changelog:
+ * v1.2.8 - Remove month tags from heatmap header for a cleaner, stable layout
  * v1.2.7 - Stable calendar-based month labels: label on first column whose first day belongs to new month
  * v1.2.6 - Month label data-anchor (reverted)
  * v1.2.5 - Month label majority-column shift (reverted)
@@ -24,7 +25,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.2.7";
+const CARD_VERSION = "1.2.8";
 
 // ─── Theme color palettes ─────────────────────────────────────────────────────
 const THEMES = {
@@ -325,39 +326,6 @@ class EnergyHeatmapCard extends HTMLElement {
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     }
 
-    // Month labels — calendar-based, column-first strategy:
-    // Scan column by column (step 7). The label fires on the first column whose
-    // first non-empty cell belongs to a new month. This is equivalent to placing
-    // the label on the first column whose Sunday row is in that month, which is the
-    // most natural visual anchor (the column "starts" in the new month).
-    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    let monthLabels = "";
-    const monthFirstCol = new Map();
-    let lastLabelMonth = -1;
-
-    for (let colIdx = 0; colIdx < totalCols; colIdx++) {
-      const base = colIdx * 7;
-      // Find the first non-empty (non-padding) cell in this column.
-      let firstCell = null;
-      for (let r = 0; r < 7; r++) {
-        const c = cells[base + r];
-        if (c && !c.empty) { firstCell = c; break; }
-      }
-      if (!firstCell) continue;
-      if (firstCell.month !== lastLabelMonth) {
-        lastLabelMonth = firstCell.month;
-        // +2: col 1 is the day-labels spacer.
-        monthFirstCol.set(`${firstCell.year}-${firstCell.month}`, {
-          month: firstCell.month,
-          colIdx,
-        });
-      }
-    }
-
-    for (const { month, colIdx } of monthFirstCol.values()) {
-      monthLabels += `<span class="month-label" style="grid-column:${colIdx + 2}">${monthNames[month]}</span>`;
-    }
-
     const dayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const cellMinPx = 14;
 
@@ -450,23 +418,6 @@ class EnergyHeatmapCard extends HTMLElement {
         }
 
         .heatmap-wrapper { overflow-x: auto; padding-bottom: 4px; }
-
-        .month-row {
-          display: grid;
-          grid-template-columns: 28px repeat(${totalCols}, 1fr);
-          gap: 2px;
-          margin-bottom: 4px;
-          min-width: ${totalCols * cellMinPx + 30}px;
-        }
-
-        .month-label {
-          font-size: 0.58rem;
-          color: var(--secondary-text-color, ${t.secondaryText});
-          font-family: 'JetBrains Mono', monospace;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-          align-self: center;
-        }
 
         .heatmap-grid-wrapper {
           display: grid;
@@ -647,9 +598,6 @@ class EnergyHeatmapCard extends HTMLElement {
         </div>` : ""}
 
         <div class="heatmap-wrapper">
-          <div class="month-row">
-            <div></div>${monthLabels}
-          </div>
           <div class="heatmap-grid-wrapper">
             <div class="day-labels">
               ${dayLabels.map((d, i) => `<div class="day-label">${i % 2 === 0 ? d : ""}</div>`).join("")}
