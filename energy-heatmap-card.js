@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.3.1
+ * Energy Heatmap Card v1.3.3
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -15,6 +15,7 @@
  * color_scheme: green/red   # green/red | purple/blue
  *
  * Changelog:
+ * v1.3.3 - In net mode, color Minimum/Maximum/Average/Total values by sign (including unit) based on selected color scheme
  * v1.3.1 - Add full Home Assistant visual editor with all card options (including color scheme)
  * v1.3.0 - Add YAML color schemes: green/red (default) and purple/blue (Home Assistant Energy-like)
  * v1.2.8 - Remove month tags from heatmap header for a cleaner, stable layout
@@ -28,7 +29,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.3.2";
+const CARD_VERSION = "1.3.3";
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -286,6 +287,11 @@ class EnergyHeatmapCard extends HTMLElement {
     return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
   }
 
+  _getSignedStatColor(value, mode, scheme, fallbackColor) {
+    if (mode !== "net") return fallbackColor;
+    return value < 0 ? scheme.exported : scheme.imported;
+  }
+
   _getColor(value, min, max, mode, theme) {
     const t = THEMES[theme];
     const scheme = this._getSchemeColors();
@@ -327,6 +333,10 @@ class EnergyHeatmapCard extends HTMLElement {
 
     const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
     const modeColor = { imported: scheme.imported, exported: scheme.exported, net: scheme.net }[mode] || scheme.net;
+    const minColor = this._getSignedStatColor(min, mode, scheme, modeColor);
+    const maxColor = this._getSignedStatColor(max, mode, scheme, modeColor);
+    const avgColor = this._getSignedStatColor(avg, mode, scheme, modeColor);
+    const totalColor = this._getSignedStatColor(total, mode, scheme, modeColor);
 
     // Grid setup:
     // - prepend empty cells so the first day lands in its weekday row
@@ -617,19 +627,19 @@ class EnergyHeatmapCard extends HTMLElement {
         <div class="stats-row">
           <div class="stat-box">
             <div class="stat-label">Minimum</div>
-            <div class="stat-value">${min.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
+            <div class="stat-value"><span style="color:${minColor}">${min.toFixed(1)}</span> <small style="font-size:.65rem;opacity:.7;color:${minColor}">${unit}</small></div>
           </div>
           <div class="stat-box">
             <div class="stat-label">Maximum</div>
-            <div class="stat-value">${max.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
+            <div class="stat-value"><span style="color:${maxColor}">${max.toFixed(1)}</span> <small style="font-size:.65rem;opacity:.7;color:${maxColor}">${unit}</small></div>
           </div>
           <div class="stat-box">
             <div class="stat-label">Average/day</div>
-            <div class="stat-value">${avg.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
+            <div class="stat-value"><span style="color:${avgColor}">${avg.toFixed(1)}</span> <small style="font-size:.65rem;opacity:.7;color:${avgColor}">${unit}</small></div>
           </div>
           <div class="stat-box">
             <div class="stat-label">Total ${this._days}d</div>
-            <div class="stat-value">${total.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
+            <div class="stat-value"><span style="color:${totalColor}">${total.toFixed(1)}</span> <small style="font-size:.65rem;opacity:.7;color:${totalColor}">${unit}</small></div>
           </div>
         </div>` : ""}
 
