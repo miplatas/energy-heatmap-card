@@ -28,7 +28,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.3.1";
+const CARD_VERSION = "1.3.2";
 
 const COLOR_SCHEMES = {
   greenRed: {
