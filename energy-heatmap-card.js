@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.2.4
+ * Energy Heatmap Card v1.2.5
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -21,7 +21,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.2.4";
+const CARD_VERSION = "1.2.5";
 
 // ─── Theme color palettes ─────────────────────────────────────────────────────
 const THEMES = {
@@ -323,8 +323,9 @@ class EnergyHeatmapCard extends HTMLElement {
     }
 
     // Month labels:
-    // anchor each label to the first rendered column where that month appears.
-    // This avoids drift when a month starts mid-week.
+    // Place each label on the first week-column that is majority (≥ 4 days) of
+    // that month. If the 1st falls on Thu/Fri/Sat (posInCol ≥ 4), the column is
+    // still mostly the previous month, so shift the label one column to the right.
     const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     let monthLabels = "";
     const monthFirstCol = new Map();
@@ -335,11 +336,12 @@ class EnergyHeatmapCard extends HTMLElement {
 
       const monthKey = `${cell.year}-${cell.month}`;
       if (!monthFirstCol.has(monthKey)) {
-        monthFirstCol.set(monthKey, {
-          month: cell.month,
-          // 7 cells per visual column (one week).
-          colIdx: Math.floor(i / 7),
-        });
+        const posInCol = i % 7; // 0=Sun … 6=Sat within that week-column
+        // If the 1st is Thu(4)/Fri(5)/Sat(6), the column is majority prior month;
+        // advance one column so the label sits above the first majority-May column.
+        let colIdx = Math.floor(i / 7);
+        if (posInCol >= 4) colIdx = Math.min(colIdx + 1, totalCols - 1);
+        monthFirstCol.set(monthKey, { month: cell.month, colIdx });
       }
     }
 
