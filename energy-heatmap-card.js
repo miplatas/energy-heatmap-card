@@ -14,6 +14,9 @@
  * days: 60
  *
  * Changelog:
+ * v1.2.7 - Stable calendar-based month labels: label on first column whose first day belongs to new month
+ * v1.2.6 - Month label data-anchor (reverted)
+ * v1.2.5 - Month label majority-column shift (reverted)
  * v1.2.4 - Update stats to 2x2 (Minimum, Maximum, Average/day, Total); show Total with 1 decimal
  * v1.2.3 - Previous release Fix month label alignment 
  * v1.2.0 - Fix month label alignment (offset + day-labels column compensation)
@@ -21,7 +24,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.2.6";
+const CARD_VERSION = "1.2.7";
 
 // ─── Theme color palettes ─────────────────────────────────────────────────────
 const THEMES = {
@@ -322,42 +325,36 @@ class EnergyHeatmapCard extends HTMLElement {
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     }
 
-    // Month labels — two-pass strategy:
-    // Pass 1: anchor each month to the first column that has REAL DATA for it.
-    //         This avoids the label floating above empty cells when a month starts
-    //         with a sensor gap (e.g. May 1-13 have no data → label moves to May 14).
-    // Pass 2: for months with no data at all, fall back to the calendar position
-    //         (shifted one column right if the 1st falls on Thu/Fri/Sat so the
-    //         label sits above a column that is majority that month, not the prior one).
+    // Month labels — calendar-based, column-first strategy:
+    // Scan column by column (step 7). The label fires on the first column whose
+    // first non-empty cell belongs to a new month. This is equivalent to placing
+    // the label on the first column whose Sunday row is in that month, which is the
+    // most natural visual anchor (the column "starts" in the new month).
     const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     let monthLabels = "";
     const monthFirstCol = new Map();
+    let lastLabelMonth = -1;
 
-    // Pass 1 – data-anchored position
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i];
-      if (!cell || cell.empty || cell.value === null) continue; // skip no-data cells
-      const monthKey = `${cell.year}-${cell.month}`;
-      if (!monthFirstCol.has(monthKey)) {
-        monthFirstCol.set(monthKey, { month: cell.month, colIdx: Math.floor(i / 7) });
+    for (let colIdx = 0; colIdx < totalCols; colIdx++) {
+      const base = colIdx * 7;
+      // Find the first non-empty (non-padding) cell in this column.
+      let firstCell = null;
+      for (let r = 0; r < 7; r++) {
+        const c = cells[base + r];
+        if (c && !c.empty) { firstCell = c; break; }
       }
-    }
-
-    // Pass 2 – calendar fallback for months that have zero data
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i];
-      if (!cell || cell.empty) continue;
-      const monthKey = `${cell.year}-${cell.month}`;
-      if (!monthFirstCol.has(monthKey)) {
-        // Month has no data; use calendar position, shifted right when 1st is late in week.
-        let colIdx = Math.floor(i / 7);
-        if (i % 7 >= 4) colIdx = Math.min(colIdx + 1, totalCols - 1);
-        monthFirstCol.set(monthKey, { month: cell.month, colIdx });
+      if (!firstCell) continue;
+      if (firstCell.month !== lastLabelMonth) {
+        lastLabelMonth = firstCell.month;
+        // +2: col 1 is the day-labels spacer.
+        monthFirstCol.set(`${firstCell.year}-${firstCell.month}`, {
+          month: firstCell.month,
+          colIdx,
+        });
       }
     }
 
     for (const { month, colIdx } of monthFirstCol.values()) {
-      // +2 because CSS grid has a left spacer/day-labels column before heatmap columns.
       monthLabels += `<span class="month-label" style="grid-column:${colIdx + 2}">${monthNames[month]}</span>`;
     }
 
