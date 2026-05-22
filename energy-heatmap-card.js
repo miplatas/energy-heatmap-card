@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.2.0
+ * Energy Heatmap Card v1.2.4
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -14,12 +14,14 @@
  * days: 60
  *
  * Changelog:
+ * v1.2.4 - Update stats to 2x2 (Minimum, Maximum, Average/day, Total); show Total with 1 decimal
+ * v1.2.3 - Previous release Fix month label alignment 
  * v1.2.0 - Fix month label alignment (offset + day-labels column compensation)
  * v1.1.0 - Automatic light/dark theme support (follows HA theme)
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.2.4";
 
 // ─── Theme color palettes ─────────────────────────────────────────────────────
 const THEMES = {
@@ -66,7 +68,9 @@ const THEMES = {
 class EnergyHeatmapCard extends HTMLElement {
   constructor() {
     super();
+    // Shadow DOM keeps styles isolated from the dashboard theme/CSS.
     this.attachShadow({ mode: "open" });
+    // Internal state used across HA lifecycle updates.
     this._days        = 60;
     this._data        = [];
     this._config      = {};
@@ -92,6 +96,7 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   setConfig(config) {
+    // At least one source entity is required so the card can render a mode.
     if (!config.entity_imported && !config.entity_net && !config.entity_exported) {
       throw new Error("You must configure at least entity_imported, entity_exported, or entity_net");
     }
@@ -113,9 +118,11 @@ class EnergyHeatmapCard extends HTMLElement {
     this._theme = newTheme;
 
     if (!this._initialized) {
+      // First HA update: load history once.
       this._initialized = true;
       this._fetchHistory();
     } else if (themeChanged && this._data.length > 0) {
+      // Re-render only when needed to reflect light/dark changes.
       this._render(this._data);
     }
   }
@@ -155,6 +162,10 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   // ─── History ───────────────────────────────────────────────────────────────
+  /**
+   * Requests entity history from Home Assistant for the configured day window.
+   * This method only fetches raw history; daily normalization is done in _processHistory.
+   */
   async _fetchHistory() {
     if (!this._hass) return;
 
@@ -187,6 +198,11 @@ class EnergyHeatmapCard extends HTMLElement {
     }
   }
 
+  /**
+   * Converts many state changes per day into one daily value per date.
+   * - net: keeps the latest sample of the day
+   * - imported/exported: keeps the max sample of the day (monotonic counters)
+   */
   _processHistory(states, mode = "net") {
     const byDay = {};
     for (const state of states) {
@@ -202,11 +218,15 @@ class EnergyHeatmapCard extends HTMLElement {
       }
 
       if (mode === "net") {
+        // Net can go up/down, so we keep the latest value seen in that day.
         if (dt.getTime() >= byDay[key].ts) byDay[key] = { value: val, ts: dt.getTime() };
       } else {
+        // Imported/Exported are expected to accumulate during the day.
         if (val > byDay[key].value) byDay[key] = { value: val, ts: byDay[key].ts };
       }
     }
+
+    // Build a fixed-length array (exactly this._days) to keep grid dimensions stable.
     const result = [];
     for (let i = this._days - 1; i >= 0; i--) {
       const d   = new Date();
@@ -248,6 +268,10 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
+  /**
+   * Builds the full card UI (styles + markup) from normalized daily data.
+   * Any change to layout, labels, or interactions is usually done here.
+   */
   _render(data) {
     const mode  = this._config.mode  || "net";
     const unit  = this._config.unit  || "kWh";
@@ -264,7 +288,9 @@ class EnergyHeatmapCard extends HTMLElement {
     const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
     const modeColor = { imported:"#ea580c",   exported:"#16a34a",   net:"#3b82f6" }[mode] || "#3b82f6";
 
-    // Grid
+    // Grid setup:
+    // - prepend empty cells so the first day lands in its weekday row
+    // - render by columns of 7 cells (Sun..Sat)
     const startOffset = data[0] ? data[0].dayOfWeek : 0;
     const cells = [];
     for (let i = 0; i < startOffset; i++) cells.push({ empty: true });
@@ -280,7 +306,7 @@ class EnergyHeatmapCard extends HTMLElement {
         data-date="${cell.date}"></div>`;
     }
 
-    // Legend
+    // Legend text and gradient are mode-specific.
     let legendStops = "";
     if (mode === "net") {
       legendStops = `
@@ -296,7 +322,9 @@ class EnergyHeatmapCard extends HTMLElement {
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     }
 
-    // ─── Month labels (anchor each month to its first visible week-column) ───
+    // Month labels:
+    // anchor each label to the first rendered column where that month appears.
+    // This avoids drift when a month starts mid-week.
     const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     let monthLabels = "";
     const monthFirstCol = new Map();
@@ -309,13 +337,14 @@ class EnergyHeatmapCard extends HTMLElement {
       if (!monthFirstCol.has(monthKey)) {
         monthFirstCol.set(monthKey, {
           month: cell.month,
+          // 7 cells per visual column (one week).
           colIdx: Math.floor(i / 7),
         });
       }
     }
 
     for (const { month, colIdx } of monthFirstCol.values()) {
-      // +2: col 1 is the spacer column used by day labels
+      // +2 because CSS grid has a left spacer/day-labels column before heatmap columns.
       monthLabels += `<span class="month-label" style="grid-column:${colIdx + 2}">${monthNames[month]}</span>`;
     }
 
@@ -382,7 +411,7 @@ class EnergyHeatmapCard extends HTMLElement {
 
         .stats-row {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(2, 1fr);
           gap: 10px;
           margin-bottom: 20px;
         }
@@ -590,16 +619,20 @@ class EnergyHeatmapCard extends HTMLElement {
         ${values.length > 0 ? `
         <div class="stats-row">
           <div class="stat-box">
-            <div class="stat-label">Average/day</div>
-            <div class="stat-value">${avg.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
+            <div class="stat-label">Minimum</div>
+            <div class="stat-value">${min.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
           </div>
           <div class="stat-box">
             <div class="stat-label">Maximum</div>
             <div class="stat-value">${max.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
           </div>
           <div class="stat-box">
+            <div class="stat-label">Average/day</div>
+            <div class="stat-value">${avg.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
+          </div>
+          <div class="stat-box">
             <div class="stat-label">Total ${this._days}d</div>
-            <div class="stat-value">${total.toFixed(0)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
+            <div class="stat-value">${total.toFixed(1)} <small style="font-size:.65rem;opacity:.7">${unit}</small></div>
           </div>
         </div>` : ""}
 
@@ -633,7 +666,7 @@ class EnergyHeatmapCard extends HTMLElement {
       <div class="tooltip" id="tooltip"></div>
     `;
 
-    // Tooltip
+    // Tooltip binds directly to non-empty cells after the DOM is injected.
     const tooltip = this.shadowRoot.getElementById("tooltip");
     this.shadowRoot.querySelectorAll(".hm-cell:not(.empty)").forEach(cell => {
       cell.addEventListener("mouseenter", e => {
@@ -652,15 +685,18 @@ class EnergyHeatmapCard extends HTMLElement {
       });
     });
 
-    // Refresh
+    // Refresh triggers a new API call and redraw.
     const btn = this.shadowRoot.getElementById("refresh-btn");
     if (btn) btn.addEventListener("click", () => { this._initialized = false; this._fetchHistory(); });
 
-    // CSV download
+    // CSV export uses the same normalized array currently shown in the card.
     const csvBtn = this.shadowRoot.getElementById("csv-btn");
     if (csvBtn) csvBtn.addEventListener("click", () => this._downloadCSV(data, mode, unit));
   }
 
+  /**
+   * Exports visible daily data to CSV (UTF-8 BOM for spreadsheet compatibility).
+   */
   _downloadCSV(data, mode, unit) {
     const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
     const rows = [
@@ -682,6 +718,7 @@ class EnergyHeatmapCard extends HTMLElement {
     URL.revokeObjectURL(url);
   }
 
+  // Minimal fallback UI shown when API/config problems occur.
   _renderError(msg) {
     this.shadowRoot.innerHTML = `
       <ha-card style="padding:20px;color:var(--error-color,#ef4444);font-family:monospace;font-size:.8rem;">
