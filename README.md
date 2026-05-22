@@ -57,6 +57,7 @@ entity_net: sensor.energy_net
 mode: net          # options: net | imported | exported
 unit: kWh
 days: 60           # optional, default: 60
+color_scheme: green/red  # optional: green/red | purple/blue
 ```
 
 ### Parameters
@@ -70,6 +71,7 @@ days: 60           # optional, default: 60
 | `title`          | No       | `Energy` | Card title                                        |
 | `unit`           | No       | `kWh`    | Unit of measurement                               |
 | `days`           | No       | `60`     | Number of days to display                         |
+| `color_scheme`   | No       | `green/red` | Heatmap palette: `green/red` or `purple/blue` |
 
 *At least one of `entity_imported`, `entity_exported`, or `entity_net` must be configured.
 
@@ -81,10 +83,9 @@ days: 60           # optional, default: 60
 - For each day, groups all states and computes the daily value:
   - In `imported` and `exported` modes, uses the **daily maximum** (final cumulative value before reset).
   - In `net` mode, uses the **last state of the day** (real daily balance, imported - exported).
-- Maps values to a color gradient:
-  - **`net` mode**: green (exporting) -> dark center (zero) -> orange/red (importing)
-  - **`imported` mode**: orange gradient (lighter = lower consumption)
-  - **`exported` mode**: green gradient (lighter = lower export)
+- Maps values to a color gradient based on `color_scheme`:
+  - **`green/red`** (default): green (exporting) and red (importing)
+  - **`purple/blue`**: purple (exporting) and blue (importing), aligned with Home Assistant Energy colors
 
 ---
 
@@ -135,6 +136,20 @@ entity_imported: sensor.energy_imported
 mode: imported
 unit: kWh
 days: 30
+```
+
+### Energy dashboard-like colors
+
+```yaml
+type: custom:energy-heatmap-card
+title: "Energy (HA Colors)"
+entity_imported: sensor.energy_imported
+entity_exported: sensor.energy_exported
+entity_net: sensor.energy_net
+mode: net
+unit: kWh
+days: 60
+color_scheme: purple/blue
 ```
 
 ---

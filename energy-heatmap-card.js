@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.2.8
+ * Energy Heatmap Card v1.3.1
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -12,8 +12,11 @@
  * mode: net           # imported | exported | net
  * unit: kWh
  * days: 60
+ * color_scheme: green/red   # green/red | purple/blue
  *
  * Changelog:
+ * v1.3.1 - Add full Home Assistant visual editor with all card options (including color scheme)
+ * v1.3.0 - Add YAML color schemes: green/red (default) and purple/blue (Home Assistant Energy-like)
  * v1.2.8 - Remove month tags from heatmap header for a cleaner, stable layout
  * v1.2.7 - Stable calendar-based month labels: label on first column whose first day belongs to new month
  * v1.2.6 - Month label data-anchor (reverted)
@@ -25,7 +28,25 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.2.8";
+const CARD_VERSION = "1.3.1";
+
+const COLOR_SCHEMES = {
+  greenRed: {
+    imported: "#dc2626",
+    exported: "#16a34a",
+    net:      "#3b82f6",
+    netPosRgb: [220, 38, 38],
+    netNegRgb: [22, 163, 74],
+  },
+  purpleBlue: {
+    // Tones aligned to the Home Assistant Energy visuals.
+    imported: "#4a8ebf",
+    exported: "#9777d3",
+    net:      "#4a8ebf",
+    netPosRgb: [74, 142, 191],
+    netNegRgb: [151, 119, 211],
+  },
+};
 
 // ─── Theme color palettes ─────────────────────────────────────────────────────
 const THEMES = {
@@ -96,6 +117,7 @@ class EnergyHeatmapCard extends HTMLElement {
       mode:            "net",
       unit:            "kWh",
       days:            60,
+      color_scheme:    "green/red",
     };
   }
 
@@ -109,6 +131,7 @@ class EnergyHeatmapCard extends HTMLElement {
       mode:  "net",
       unit:  "kWh",
       days:  60,
+      color_scheme: "green/red",
       ...config,
     };
     this._days        = this._config.days || 60;
@@ -249,26 +272,38 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   // ─── Heatmap colors ────────────────────────────────────────────────────────
+  _normalizeColorScheme(value) {
+    const v = String(value || "green/red").trim().toLowerCase();
+    if (v === "purple/blue" || v === "purple_blue" || v === "purple-blue") return "purpleBlue";
+    return "greenRed";
+  }
+
+  _getSchemeColors() {
+    return COLOR_SCHEMES[this._normalizeColorScheme(this._config.color_scheme)];
+  }
+
+  _rgbToRgba(rgb, alpha) {
+    return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+  }
+
   _getColor(value, min, max, mode, theme) {
     const t = THEMES[theme];
+    const scheme = this._getSchemeColors();
     if (value === null) return t.emptyCellBg;
     const ratio = max > min ? (value - min) / (max - min) : 0.5;
 
     if (mode === "net") {
       if (value < 0) {
-        const alpha = 0.25 + Math.abs(ratio) * 0.75;
-        return `rgba(22,163,74,${alpha})`;
+        const alpha = 0.25 + (1 - ratio) * 0.75;
+        return this._rgbToRgba(scheme.netNegRgb, alpha);
       }
-      const r = Math.round(220 + ratio * 35);
-      const g = Math.round(120 - ratio * 100);
-      const b = Math.round(40  - ratio * 30);
-      const a = theme === "light" ? 0.2 + ratio * 0.8 : 1;
-      return `rgba(${r},${g},${b},${a})`;
+      const a = theme === "light" ? 0.2 + ratio * 0.8 : 0.25 + ratio * 0.75;
+      return this._rgbToRgba(scheme.netPosRgb, a);
     }
     if (mode === "exported") {
-      return `rgba(22,163,74,${0.15 + ratio * 0.85})`;
+      return this._rgbToRgba(scheme.netNegRgb, 0.15 + ratio * 0.85);
     }
-    return `rgba(234,88,12,${0.15 + ratio * 0.85})`;
+    return this._rgbToRgba(scheme.netPosRgb, 0.15 + ratio * 0.85);
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -282,6 +317,7 @@ class EnergyHeatmapCard extends HTMLElement {
     const title = this._config.title || "Energy";
     const theme = this._theme;
     const t     = THEMES[theme];
+    const scheme = this._getSchemeColors();
 
     const values = data.filter(d => d.value !== null).map(d => d.value);
     const min    = values.length ? Math.min(...values) : 0;
@@ -290,7 +326,7 @@ class EnergyHeatmapCard extends HTMLElement {
     const total  = values.reduce((a,b) => a+b, 0);
 
     const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
-    const modeColor = { imported:"#ea580c",   exported:"#16a34a",   net:"#3b82f6" }[mode] || "#3b82f6";
+    const modeColor = { imported: scheme.imported, exported: scheme.exported, net: scheme.net }[mode] || scheme.net;
 
     // Grid setup:
     // - prepend empty cells so the first day lands in its weekday row
@@ -314,15 +350,15 @@ class EnergyHeatmapCard extends HTMLElement {
     let legendStops = "";
     if (mode === "net") {
       legendStops = `
-        <div class="legend-bar" style="background:linear-gradient(to right,rgba(22,163,74,0.9),rgba(22,163,74,0.15),${t.legendNetCenter},rgba(234,88,12,0.15),rgba(220,38,38,0.9))"></div>
+        <div class="legend-bar" style="background:linear-gradient(to right,${this._rgbToRgba(scheme.netNegRgb, 0.9)},${this._rgbToRgba(scheme.netNegRgb, 0.15)},${t.legendNetCenter},${this._rgbToRgba(scheme.netPosRgb, 0.15)},${this._rgbToRgba(scheme.netPosRgb, 0.9)})"></div>
         <div class="legend-labels"><span>Exporting</span><span>0</span><span>Importing</span></div>`;
     } else if (mode === "exported") {
       legendStops = `
-        <div class="legend-bar" style="background:linear-gradient(to right,rgba(22,163,74,0.15),rgba(22,163,74,0.9))"></div>
+        <div class="legend-bar" style="background:linear-gradient(to right,${this._rgbToRgba(scheme.netNegRgb, 0.15)},${this._rgbToRgba(scheme.netNegRgb, 0.9)})"></div>
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     } else {
       legendStops = `
-        <div class="legend-bar" style="background:linear-gradient(to right,rgba(234,88,12,0.15),rgba(234,88,12,0.9))"></div>
+        <div class="legend-bar" style="background:linear-gradient(to right,${this._rgbToRgba(scheme.netPosRgb, 0.15)},${this._rgbToRgba(scheme.netPosRgb, 0.9)})"></div>
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     }
 
@@ -689,7 +725,192 @@ class EnergyHeatmapCard extends HTMLElement {
 
 // ─── Editor (base for HA visual UI) ──────────────────────────────────────────
 class EnergyHeatmapCardEditor extends HTMLElement {
-  setConfig(config) { this._config = config; }
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+  }
+
+  setConfig(config) {
+    this._config = {
+      title: "Energy",
+      mode: "net",
+      unit: "kWh",
+      days: 60,
+      color_scheme: "green/red",
+      ...config,
+    };
+    this._render();
+  }
+
+  connectedCallback() {
+    if (!this.shadowRoot.innerHTML) this._render();
+  }
+
+  _escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  _onValueChanged(ev) {
+    const target = ev.target;
+    const key = target?.dataset?.config;
+    if (!key) return;
+
+    let value = target.value;
+    if (key === "days") {
+      const parsed = parseInt(value, 10);
+      value = Number.isNaN(parsed) ? "" : Math.max(parsed, 1);
+      if (target.value !== "" && String(value) !== target.value) target.value = String(value);
+    }
+
+    const newConfig = { ...this._config };
+    if (value === "") delete newConfig[key];
+    else newConfig[key] = value;
+
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: newConfig },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  _bindEvents() {
+    this.shadowRoot.querySelectorAll("[data-config]").forEach((el) => {
+      el.addEventListener("change", (ev) => this._onValueChanged(ev));
+      if (el.tagName === "INPUT") {
+        el.addEventListener("input", (ev) => this._onValueChanged(ev));
+      }
+    });
+  }
+
+  _render() {
+    const cfg = this._config || {};
+    const title = this._escapeHtml(cfg.title ?? "Energy");
+    const entityImported = this._escapeHtml(cfg.entity_imported ?? "");
+    const entityExported = this._escapeHtml(cfg.entity_exported ?? "");
+    const entityNet = this._escapeHtml(cfg.entity_net ?? "");
+    const mode = String(cfg.mode ?? "net");
+    const unit = this._escapeHtml(cfg.unit ?? "kWh");
+    const days = this._escapeHtml(cfg.days ?? 60);
+    const colorScheme = String(cfg.color_scheme ?? "green/red");
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: block;
+          padding: 8px 0;
+          color: var(--primary-text-color);
+          font-family: var(--paper-font-body1_-_font-family, sans-serif);
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .field.full {
+          grid-column: 1 / -1;
+        }
+
+        label {
+          font-size: 0.78rem;
+          color: var(--secondary-text-color);
+          letter-spacing: 0.02em;
+        }
+
+        input,
+        select {
+          width: 100%;
+          box-sizing: border-box;
+          border: 1px solid var(--divider-color);
+          border-radius: 8px;
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color);
+          padding: 8px 10px;
+          font-size: 0.92rem;
+        }
+
+        input:focus,
+        select:focus {
+          outline: 2px solid var(--primary-color);
+          outline-offset: 1px;
+        }
+
+        .help {
+          margin-top: 10px;
+          font-size: 0.76rem;
+          color: var(--secondary-text-color);
+          line-height: 1.4;
+        }
+      </style>
+
+      <div class="grid">
+        <div class="field full">
+          <label for="title">Title</label>
+          <input id="title" data-config="title" type="text" value="${title}" placeholder="Energy" />
+        </div>
+
+        <div class="field">
+          <label for="entity_imported">Imported entity</label>
+          <input id="entity_imported" data-config="entity_imported" type="text" value="${entityImported}" placeholder="sensor.energy_imported" />
+        </div>
+
+        <div class="field">
+          <label for="entity_exported">Exported entity</label>
+          <input id="entity_exported" data-config="entity_exported" type="text" value="${entityExported}" placeholder="sensor.energy_exported" />
+        </div>
+
+        <div class="field full">
+          <label for="entity_net">Net entity</label>
+          <input id="entity_net" data-config="entity_net" type="text" value="${entityNet}" placeholder="sensor.energy_net" />
+        </div>
+
+        <div class="field">
+          <label for="mode">Mode</label>
+          <select id="mode" data-config="mode">
+            <option value="net" ${mode === "net" ? "selected" : ""}>Net</option>
+            <option value="imported" ${mode === "imported" ? "selected" : ""}>Imported</option>
+            <option value="exported" ${mode === "exported" ? "selected" : ""}>Exported</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="color_scheme">Color scheme</label>
+          <select id="color_scheme" data-config="color_scheme">
+            <option value="green/red" ${colorScheme === "green/red" ? "selected" : ""}>Green / Red</option>
+            <option value="purple/blue" ${colorScheme === "purple/blue" ? "selected" : ""}>Purple / Blue (Energy)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="unit">Unit</label>
+          <input id="unit" data-config="unit" type="text" value="${unit}" placeholder="kWh" />
+        </div>
+
+        <div class="field">
+          <label for="days">Days</label>
+          <input id="days" data-config="days" type="number" min="1" step="1" value="${days}" placeholder="60" />
+        </div>
+      </div>
+
+      <div class="help">At least one entity is required: Imported, Exported, or Net.</div>
+    `;
+
+    this._bindEvents();
+  }
 }
 
 customElements.define("energy-heatmap-card-editor", EnergyHeatmapCardEditor);
