@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.3.3
+ * Energy Heatmap Card v1.3.4
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -15,6 +15,7 @@
  * color_scheme: green/red   # green/red | purple/blue
  *
  * Changelog:
+ * v1.3.4 - In net mode, make NET header/bar color follow total sign using the active palette
  * v1.3.3 - In net mode, color Minimum/Maximum/Average/Total values by sign (including unit) based on selected color scheme
  * v1.3.1 - Add full Home Assistant visual editor with all card options (including color scheme)
  * v1.3.0 - Add YAML color schemes: green/red (default) and purple/blue (Home Assistant Energy-like)
@@ -29,7 +30,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.3.3";
+const CARD_VERSION = "1.3.4";
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -292,6 +293,11 @@ class EnergyHeatmapCard extends HTMLElement {
     return value < 0 ? scheme.exported : scheme.imported;
   }
 
+  _getNetUiColor(total, hasData, scheme) {
+    if (!hasData || total === 0) return scheme.net;
+    return total < 0 ? scheme.exported : scheme.imported;
+  }
+
   _getColor(value, min, max, mode, theme) {
     const t = THEMES[theme];
     const scheme = this._getSchemeColors();
@@ -332,7 +338,8 @@ class EnergyHeatmapCard extends HTMLElement {
     const total  = values.reduce((a,b) => a+b, 0);
 
     const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
-    const modeColor = { imported: scheme.imported, exported: scheme.exported, net: scheme.net }[mode] || scheme.net;
+    const netUiColor = this._getNetUiColor(total, values.length > 0, scheme);
+    const modeColor = { imported: scheme.imported, exported: scheme.exported, net: netUiColor }[mode] || netUiColor;
     const minColor = this._getSignedStatColor(min, mode, scheme, modeColor);
     const maxColor = this._getSignedStatColor(max, mode, scheme, modeColor);
     const avgColor = this._getSignedStatColor(avg, mode, scheme, modeColor);
