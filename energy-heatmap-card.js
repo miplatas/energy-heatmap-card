@@ -32,7 +32,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.4.1";
+const CARD_VERSION = "1.4.2";
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -279,6 +279,12 @@ class EnergyHeatmapCard extends HTMLElement {
     const gridSources = sources.filter(s => s?.type === "grid");
 
     for (const source of gridSources) {
+      // Newer/alternate Energy configs keep grid totals directly on source.
+      const directImported = this._toStatisticId(source?.stat_energy_from || source?.entity_energy_from);
+      const directExported = this._toStatisticId(source?.stat_energy_to || source?.entity_energy_to);
+      if (directImported) ids.imported.push(directImported);
+      if (directExported) ids.exported.push(directExported);
+
       for (const flow of (source?.flow_from || [])) {
         const id = this._toStatisticId(flow?.stat_energy_from || flow?.entity_energy_from);
         if (id) ids.imported.push(id);
