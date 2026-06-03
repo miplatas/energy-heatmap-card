@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.4.0
+ * Energy Heatmap Card v1.4.2
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -16,6 +16,8 @@
  * color_scheme: green/red   # green/red | purple/blue
  *
  * Changelog:
+ * v1.4.3 - Increase heatmap cell size to better use card space
+ * v1.4.2 - Fix Energy dashboard grid parsing for direct stat_energy_from/stat_energy_to configs
  * v1.4.0 - Add hybrid data source: Energy dashboard (statistics) with optional manual sensor fallback
  * v1.3.4 - In net mode, make NET header/bar color follow total sign using the active palette
  * v1.3.3 - In net mode, color Minimum/Maximum/Average/Total values by sign (including unit) based on selected color scheme
@@ -32,7 +34,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.4.2";
+const CARD_VERSION = "1.4.3";
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -551,7 +553,7 @@ class EnergyHeatmapCard extends HTMLElement {
     }
 
     const dayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    const cellMinPx = 14;
+    const cellMinPx = 28;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -676,8 +678,8 @@ class EnergyHeatmapCard extends HTMLElement {
         .hm-cell {
           width: 100%;
           aspect-ratio: 1;
-          min-width: 10px;
-          min-height: 10px;
+          min-width: 20px;
+          min-height: 20px;
           border-radius: 2px;
           cursor: pointer;
           transition: transform 0.1s, filter 0.1s, box-shadow 0.1s;
