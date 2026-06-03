@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.3.4
+ * Energy Heatmap Card v1.4.0
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net energy
  *
@@ -10,11 +10,13 @@
  * entity_net: sensor.energy_net
  * title: "Energy Heatmap"
  * mode: net           # imported | exported | net
+ * data_source: auto   # auto | dashboard | manual
  * unit: kWh
  * days: 60
  * color_scheme: green/red   # green/red | purple/blue
  *
  * Changelog:
+ * v1.4.0 - Add hybrid data source: Energy dashboard (statistics) with optional manual sensor fallback
  * v1.3.4 - In net mode, make NET header/bar color follow total sign using the active palette
  * v1.3.3 - In net mode, color Minimum/Maximum/Average/Total values by sign (including unit) based on selected color scheme
  * v1.3.1 - Add full Home Assistant visual editor with all card options (including color scheme)
@@ -30,7 +32,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.3.4";
+const CARD_VERSION = "1.4.0";
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -104,6 +106,7 @@ class EnergyHeatmapCard extends HTMLElement {
     this._hass        = null;
     this._initialized = false;
     this._theme       = "dark";
+    this._activeSource = "manual";
   }
 
   static getConfigElement() {
@@ -117,6 +120,7 @@ class EnergyHeatmapCard extends HTMLElement {
       entity_net:      "sensor.energy_net",
       title:           "Energy - Last 60 Days",
       mode:            "net",
+      data_source:     "auto",
       unit:            "kWh",
       days:            60,
       color_scheme:    "green/red",
@@ -124,13 +128,16 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   setConfig(config) {
-    // At least one source entity is required so the card can render a mode.
-    if (!config.entity_imported && !config.entity_net && !config.entity_exported) {
-      throw new Error("You must configure at least entity_imported, entity_exported, or entity_net");
+    const sourceMode = this._normalizeDataSource(config.data_source);
+    const hasManualEntities = !!(config.entity_imported || config.entity_net || config.entity_exported);
+    // Manual mode needs at least one entity. Dashboard/auto can work without manual entities.
+    if (sourceMode === "manual" && !hasManualEntities) {
+      throw new Error("In manual mode, configure at least entity_imported, entity_exported, or entity_net");
     }
     this._config = {
       title: "Energy",
       mode:  "net",
+      data_source: "auto",
       unit:  "kWh",
       days:  60,
       color_scheme: "green/red",
@@ -138,6 +145,13 @@ class EnergyHeatmapCard extends HTMLElement {
     };
     this._days        = this._config.days || 60;
     this._initialized = false;
+  }
+
+  _normalizeDataSource(value) {
+    const v = String(value || "auto").trim().toLowerCase();
+    if (v === "dashboard") return "dashboard";
+    if (v === "manual") return "manual";
+    return "auto";
   }
 
   set hass(hass) {
@@ -203,13 +217,39 @@ class EnergyHeatmapCard extends HTMLElement {
     start.setDate(start.getDate() - this._days);
 
     const mode = this._config.mode || "net";
+    const sourceMode = this._normalizeDataSource(this._config.data_source);
+
+    if (sourceMode !== "manual") {
+      try {
+        const dashboardData = await this._fetchDashboardDailyData(mode, start, end);
+        if (dashboardData) {
+          this._activeSource = "dashboard";
+          this._data = dashboardData;
+          this._render(this._data);
+          return;
+        }
+        if (sourceMode === "dashboard") {
+          this._renderError("Energy dashboard is not configured or has no compatible statistics");
+          return;
+        }
+      } catch (err) {
+        console.warn("EnergyHeatmapCard: dashboard source failed, trying manual fallback", err);
+        if (sourceMode === "dashboard") {
+          this._renderError("Error reading energy dashboard data: " + err.message);
+          return;
+        }
+      }
+    }
+
     let entityId;
     if      (mode === "imported") entityId = this._config.entity_imported;
     else if (mode === "exported") entityId = this._config.entity_exported;
     else                          entityId = this._config.entity_net || this._config.entity_imported;
 
     if (!entityId) {
-      this._renderError("Entity not found for mode: " + mode);
+      this._renderError(sourceMode === "manual"
+        ? "Entity not found for mode: " + mode
+        : "No dashboard data and no fallback entity configured for mode: " + mode);
       return;
     }
 
@@ -219,12 +259,136 @@ class EnergyHeatmapCard extends HTMLElement {
         `history/period/${start.toISOString()}?end_time=${end.toISOString()}&filter_entity_id=${entityId}&minimal_response=true`
       );
       if (!history || !history[0]) { this._data = []; this._render([]); return; }
+      this._activeSource = "manual";
       this._data = this._processHistory(history[0], mode);
       this._render(this._data);
     } catch (err) {
       console.error("EnergyHeatmapCard: Error fetching history", err);
       this._renderError("Error fetching history: " + err.message);
     }
+  }
+
+  _toStatisticId(id) {
+    if (!id) return null;
+    return String(id).trim();
+  }
+
+  _extractEnergyStatisticIds(prefs) {
+    const ids = { imported: [], exported: [] };
+    const sources = Array.isArray(prefs?.energy_sources) ? prefs.energy_sources : [];
+    const gridSources = sources.filter(s => s?.type === "grid");
+
+    for (const source of gridSources) {
+      for (const flow of (source?.flow_from || [])) {
+        const id = this._toStatisticId(flow?.stat_energy_from || flow?.entity_energy_from);
+        if (id) ids.imported.push(id);
+      }
+      for (const flow of (source?.flow_to || [])) {
+        const id = this._toStatisticId(flow?.stat_energy_to || flow?.entity_energy_to);
+        if (id) ids.exported.push(id);
+      }
+    }
+
+    ids.imported = [...new Set(ids.imported)];
+    ids.exported = [...new Set(ids.exported)];
+    return ids;
+  }
+
+  _extractStatisticPointValue(point) {
+    const candidates = [point?.change, point?.sum, point?.state, point?.max, point?.mean, point?.min];
+    for (const value of candidates) {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
+  }
+
+  _mapStatisticSeriesByDay(series = []) {
+    const byDay = {};
+    for (const point of series) {
+      const stamp = point?.start || point?.end;
+      if (!stamp) continue;
+      const d = new Date(stamp);
+      if (Number.isNaN(d.getTime())) continue;
+      const val = this._extractStatisticPointValue(point);
+      if (val === null) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      byDay[key] = val;
+    }
+    return byDay;
+  }
+
+  _sumSeriesByDay(statistics, statisticIds) {
+    const totalByDay = {};
+    for (const id of statisticIds) {
+      const series = Array.isArray(statistics?.[id]) ? statistics[id] : [];
+      const byDay = this._mapStatisticSeriesByDay(series);
+      for (const [day, val] of Object.entries(byDay)) {
+        totalByDay[day] = (totalByDay[day] || 0) + val;
+      }
+    }
+    return totalByDay;
+  }
+
+  _buildDailyDataFromSums(mode, importedByDay, exportedByDay) {
+    const result = [];
+    for (let i = this._days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
+      const imported = Number.isFinite(importedByDay[key]) ? importedByDay[key] : null;
+      const exported = Number.isFinite(exportedByDay[key]) ? exportedByDay[key] : null;
+      let value = null;
+
+      if (mode === "imported") {
+        value = imported;
+      } else if (mode === "exported") {
+        value = exported;
+      } else if (imported !== null || exported !== null) {
+        value = (imported || 0) - (exported || 0);
+      }
+
+      result.push({
+        date:       key,
+        value,
+        year:       d.getFullYear(),
+        dayOfWeek:  d.getDay(),
+        month:      d.getMonth(),
+        dayOfMonth: d.getDate(),
+      });
+    }
+    return result;
+  }
+
+  async _fetchDashboardDailyData(mode, start, end) {
+    if (!this._hass?.callWS) return null;
+
+    const prefs = await this._hass.callWS({ type: "energy/get_prefs" });
+    const ids = this._extractEnergyStatisticIds(prefs);
+    const requiredIds = mode === "imported"
+      ? ids.imported
+      : mode === "exported"
+        ? ids.exported
+        : [...ids.imported, ...ids.exported];
+
+    if (!requiredIds.length) return null;
+
+    const statistics = await this._hass.callWS({
+      type: "recorder/statistics_during_period",
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+      statistic_ids: requiredIds,
+      period: "day",
+    });
+
+    if (!statistics || typeof statistics !== "object") return null;
+
+    const importedByDay = this._sumSeriesByDay(statistics, ids.imported);
+    const exportedByDay = this._sumSeriesByDay(statistics, ids.exported);
+    const data = this._buildDailyDataFromSums(mode, importedByDay, exportedByDay);
+
+    return data.some(d => d.value !== null) ? data : null;
   }
 
   /**
@@ -330,6 +494,7 @@ class EnergyHeatmapCard extends HTMLElement {
     const theme = this._theme;
     const t     = THEMES[theme];
     const scheme = this._getSchemeColors();
+    const sourceHint = this._activeSource === "dashboard" ? "Energy dashboard" : "Manual entities";
 
     const values = data.filter(d => d.value !== null).map(d => d.value);
     const min    = values.length ? Math.min(...values) : 0;
@@ -666,7 +831,7 @@ class EnergyHeatmapCard extends HTMLElement {
         </div>` : `<div class="no-data">No historical data available</div>`}
 
         <div class="footer">
-          <div class="footer-days">Last ${this._days} days · Reset 12:00</div>
+          <div class="footer-days">Last ${this._days} days · ${sourceHint}</div>
           <div class="footer-btns">
             <button class="csv-btn" id="csv-btn">⬇ CSV</button>
             <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
@@ -752,6 +917,7 @@ class EnergyHeatmapCardEditor extends HTMLElement {
     this._config = {
       title: "Energy",
       mode: "net",
+      data_source: "auto",
       unit: "kWh",
       days: 60,
       color_scheme: "green/red",
@@ -813,6 +979,7 @@ class EnergyHeatmapCardEditor extends HTMLElement {
     const entityExported = this._escapeHtml(cfg.entity_exported ?? "");
     const entityNet = this._escapeHtml(cfg.entity_net ?? "");
     const mode = String(cfg.mode ?? "net");
+    const dataSource = String(cfg.data_source ?? "auto");
     const unit = this._escapeHtml(cfg.unit ?? "kWh");
     const days = this._escapeHtml(cfg.days ?? 60);
     const colorScheme = String(cfg.color_scheme ?? "green/red");
@@ -905,6 +1072,15 @@ class EnergyHeatmapCardEditor extends HTMLElement {
         </div>
 
         <div class="field">
+          <label for="data_source">Data source</label>
+          <select id="data_source" data-config="data_source">
+            <option value="auto" ${dataSource === "auto" ? "selected" : ""}>Auto (Energy dashboard, then manual)</option>
+            <option value="dashboard" ${dataSource === "dashboard" ? "selected" : ""}>Energy dashboard only</option>
+            <option value="manual" ${dataSource === "manual" ? "selected" : ""}>Manual entities only</option>
+          </select>
+        </div>
+
+        <div class="field">
           <label for="color_scheme">Color scheme</label>
           <select id="color_scheme" data-config="color_scheme">
             <option value="green/red" ${colorScheme === "green/red" ? "selected" : ""}>Green / Red</option>
@@ -923,7 +1099,7 @@ class EnergyHeatmapCardEditor extends HTMLElement {
         </div>
       </div>
 
-      <div class="help">At least one entity is required: Imported, Exported, or Net.</div>
+      <div class="help">Manual mode requires at least one entity. Auto mode tries Energy dashboard first and then manual entities.</div>
     `;
 
     this._bindEvents();

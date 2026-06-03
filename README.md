@@ -55,6 +55,7 @@ entity_imported: sensor.energy_imported
 entity_exported: sensor.energy_exported
 entity_net: sensor.energy_net
 mode: net          # options: net | imported | exported
+data_source: auto  # options: auto | dashboard | manual
 unit: kWh
 days: 60           # optional, default: 60
 color_scheme: green/red  # optional: green/red | purple/blue
@@ -68,6 +69,7 @@ color_scheme: green/red  # optional: green/red | purple/blue
 | `entity_exported`| Conditional*  | —        | Exported energy sensor                            |
 | `entity_net`     | Conditional*  | —        | Net energy sensor (imported - exported)           |
 | `mode`           | No       | `net`    | Sensor to display: `net`, `imported`, `exported` |
+| `data_source`    | No       | `auto`   | Source strategy: `auto` (Energy dashboard then manual), `dashboard`, or `manual` |
 | `title`          | No       | `Energy` | Card title                                        |
 | `unit`           | No       | `kWh`    | Unit of measurement                               |
 | `days`           | No       | `60`     | Number of days to display                         |
@@ -80,6 +82,7 @@ color_scheme: green/red  # optional: green/red | purple/blue
 ## Data model and daily calculation
 
 - Fetches the selected entity history using the Home Assistant API.
+- In `auto`/`dashboard`, reads Energy dashboard preferences and daily recorder statistics.
 - For each day, groups all states and computes the daily value:
   - In `imported` and `exported` modes, uses the **daily maximum** (final cumulative value before reset).
   - In `net` mode, uses the **last state of the day** (real daily balance, imported - exported).
@@ -157,6 +160,7 @@ color_scheme: purple/blue
 ## Notes
 
 - History must be enabled in Home Assistant (`recorder`).
+- Energy dashboard source requires Home Assistant Energy panel configured and long-term statistics available.
 - `utility_meter` sensors that reset daily at 12:00 work very well.
 - For 60 days of data, you may need to increase recorder retention:
 
