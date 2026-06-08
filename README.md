@@ -6,6 +6,14 @@ Built for daily energy sensors, including setups that reset at 12:00.
 
 ---
 
+## Card previews
+
+| Net mode | Imported mode | Exported mode |
+|---|---|---|
+| ![Net mode preview](images/net.png) | ![Imported mode preview](images/imported.png) | ![Exported mode preview](images/exported.png) |
+
+---
+
 ## Features
 
 - Three display modes: `net`, `imported`, `exported`
