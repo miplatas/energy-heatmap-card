@@ -16,6 +16,7 @@
  * color_scheme: green/red   # green/red | purple/blue
  *
  * Changelog:
+ * v1.4.4 - Add description and documentation in README
  * v1.4.3 - Increase heatmap cell size to better use card space
  * v1.4.2 - Fix Energy dashboard grid parsing for direct stat_energy_from/stat_energy_to configs
  * v1.4.0 - Add hybrid data source: Energy dashboard (statistics) with optional manual sensor fallback
@@ -34,7 +35,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.4.3";
+const CARD_VERSION = "1.4.4";
 
 const COLOR_SCHEMES = {
   greenRed: {
