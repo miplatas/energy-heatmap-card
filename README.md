@@ -1,8 +1,14 @@
 # Energy Heatmap Card
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/miplatas/time-spent-pie-card?display_name=tag)](https://github.com/miplatas/time-spent-pie-card/releases)
+[![GitHub last commit](https://img.shields.io/github/last-commit/miplatas/time-spent-pie-card)](https://github.com/miplatas/time-spent-pie-card/commits/main)
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/miplatas)
+
+
 Custom Home Assistant (Lovelace) card that shows an **energy heatmap** for the last N days.
 
-Built for daily energy sensors, including setups that reset at 12:00.
+Takes data from energy panel (`auto`, `dashboard` modes), or daily energy sensors (`manual`). 
 
 ---
 
@@ -16,7 +22,7 @@ Built for daily energy sensors, including setups that reset at 12:00.
 
 ## Features
 
-- Three display modes: `net`, `imported`, `exported`
+- Three display modes: `net` (exported - imported), `imported` and `exported`
 - Flexible data source selection: `auto`, `dashboard`, `manual`
 - Daily aggregation by mode:
   - `imported` and `exported`: daily **maximum** value
@@ -31,18 +37,6 @@ Built for daily energy sensors, including setups that reset at 12:00.
 - In-card controls:
   - **CSV export** button
   - **Refresh** button
-
----
-
-## Changelog (Recent)
-
-- **v1.4.3**
-  - Increased heatmap cell size to better use card space and improve readability.
-- **v1.4.2**
-  - Improved Energy dashboard source parsing for grid configurations that expose direct `stat_energy_from` / `stat_energy_to` fields.
-- **v1.4.0**
-  - Added hybrid source mode via `data_source`: `auto` (dashboard first, manual fallback), `dashboard`, `manual`.
-  - Added daily statistics path from the Home Assistant Energy dashboard.
 
 ---
 
@@ -75,31 +69,27 @@ Built for daily energy sensors, including setups that reset at 12:00.
 ```yaml
 type: custom:energy-heatmap-card
 title: "Home Energy"
-entity_imported: sensor.energy_imported
-entity_exported: sensor.energy_exported
 entity_net: sensor.energy_net
 mode: net          # options: net | imported | exported
 data_source: auto  # options: auto | dashboard | manual
 unit: kWh
 days: 60           # optional, default: 60
-color_scheme: green/red  # optional: green/red | purple/blue
+color_scheme: purple/blue  # optional: green/red | purple/blue
 ```
 
 ### Parameters
 
-| Parameter         | Required      | Default  | Description                                       |
-|------------------|---------------|----------|---------------------------------------------------|
-| `entity_imported`| Conditional*  | —        | Imported energy sensor                            |
-| `entity_exported`| Conditional*  | —        | Exported energy sensor                            |
-| `entity_net`     | Conditional*  | —        | Net energy sensor (imported - exported)           |
-| `mode`           | No       | `net`    | Sensor to display: `net`, `imported`, `exported` |
-| `data_source`    | No       | `auto`   | Source strategy: `auto` (Energy dashboard then manual), `dashboard`, or `manual` |
-| `title`          | No       | `Energy` | Card title                                        |
-| `unit`           | No       | `kWh`    | Unit of measurement                               |
-| `days`           | No       | `60`     | Number of days to display                         |
-| `color_scheme`   | No       | `green/red` | Heatmap palette: `green/red` or `purple/blue` |
-
-*At least one of `entity_imported`, `entity_exported`, or `entity_net` must be configured.
+| Parameter         | Default  | Description                                       |
+|------------------|----------|---------------------------------------------------|
+| `entity_imported`| —        | Imported energy sensor                            |
+| `entity_exported`| —        | Exported energy sensor                            |
+| `entity_net`     | —        | Net energy sensor (imported - exported)           |
+| `mode`           | `net`    | Sensor to display: `net`, `imported`, `exported` |
+| `data_source`    | `auto`   | Source strategy: `auto` (Energy dashboard then manual), `dashboard`, or `manual` |
+| `title`          | `Energy` | Card title                                        |
+| `unit`            `kWh`    | Unit of measurement                               |
+| `days`           | `60`     | Number of days to display                         |
+| `color_scheme`   | `green/red` | Heatmap palette: `green/red` or `purple/blue` |
 
 ---
 
@@ -143,23 +133,36 @@ Use the **Refresh** button to re-fetch history immediately without reloading the
 
 ## Configuration examples
 
-### Net energy only (recommended)
+### Auto Net energy (recommended)
 
 ```yaml
 type: custom:energy-heatmap-card
 title: "Net Energy"
-entity_net: sensor.energy_net_daily
+data_source: auto
 mode: net
 unit: kWh
 days: 60
 ```
 
-### Imported energy only
+### Manual Net energy
+
+```yaml
+type: custom:energy-heatmap-card
+title: "Net Energy"
+entity_net: sensor.energy_net_daily
+data_source: manual
+mode: net
+unit: kWh
+days: 60
+```
+
+### Imported energy
 
 ```yaml
 type: custom:energy-heatmap-card
 title: "Grid Consumption"
 entity_imported: sensor.energy_imported
+data_source: manual
 mode: imported
 unit: kWh
 days: 30
@@ -170,49 +173,65 @@ days: 30
 ```yaml
 type: custom:energy-heatmap-card
 title: "Energy (HA Colors)"
-entity_imported: sensor.energy_imported
-entity_exported: sensor.energy_exported
-entity_net: sensor.energy_net
+data_source: manual
 mode: net
 unit: kWh
 days: 60
 color_scheme: purple/blue
 ```
 
-### Energy dashboard source (no manual entities required)
+### Three cards with custom tabbed card
 
 ```yaml
-type: custom:energy-heatmap-card
-title: "Energy Dashboard Source"
-mode: net
-data_source: dashboard
-unit: kWh
-days: 60
-```
-
-### Hybrid source (dashboard first, manual fallback)
-
-```yaml
-type: custom:energy-heatmap-card
-title: "Hybrid Source"
-entity_imported: sensor.energy_imported
-entity_exported: sensor.energy_exported
-mode: net
-data_source: auto
-unit: kWh
-days: 60
+type: custom:tabbed-card
+tabs:
+  - attributes:
+      label: Net
+    card:
+      type: custom:energy-heatmap-card
+      title: Total KWh
+      mode: net
+      unit: kWh
+      days: 60
+      color_scheme: purple/blue
+  - attributes:
+      label: Imported
+    card:
+      type: custom:energy-heatmap-card
+      title: Imported KWh
+      mode: imported
+      unit: kWh
+      days: 60
+      color_scheme: purple/blue
+  - attributes:
+      label: Exported
+    card:
+      type: custom:energy-heatmap-card
+      title: Exported kWh
+      mode: exported
+      unit: kWh
+      days: 60
+      color_scheme: purple/blue
+grid_options:
+  columns: 12
+  rows: auto
 ```
 
 ---
 
 ## Notes
 
-- History must be enabled in Home Assistant (`recorder`).
 - Energy dashboard source requires Home Assistant Energy panel configured and long-term statistics available.
-- `utility_meter` sensors that reset daily at 12:00 work very well.
-- For 60 days of data, you may need to increase recorder retention:
+- If no energy panel dashboard source is used, in `manual` mode, sensors that reset daily at 12:00 work very well.
+- In `manual` mode, for 60 days of data, you may need to increase recorder retention:
 
   ```yaml
   recorder:
     purge_keep_days: 90
   ```
+
+---
+
+## License
+
+GNU GENERAL PUBLIC LICENSE V3. — see [LICENSE](LICENSE)
