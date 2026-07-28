@@ -22,7 +22,7 @@ Takes data from energy panel (`auto`, `dashboard` modes), or daily energy sensor
 
 ## Features
 
-- Three display modes: `net` (exported - imported), `imported` and `exported`
+- Four display modes: `net` (imported - exported), `imported`, `exported`, and `solar`
 - Flexible data source selection: `auto`, `dashboard`, `manual`
 - Daily aggregation by mode:
   - `imported` and `exported`: daily **maximum** value
@@ -70,7 +70,8 @@ Takes data from energy panel (`auto`, `dashboard` modes), or daily energy sensor
 type: custom:energy-heatmap-card
 title: "Home Energy"
 entity_net: sensor.energy_net
-mode: net          # options: net | imported | exported
+mode: net          # options: net | imported | exported | solar
+entity_solar: sensor.energy_solar
 data_source: auto  # options: auto | dashboard | manual
 unit: kWh
 days: 60           # optional, default: 60
@@ -84,7 +85,8 @@ color_scheme: purple/blue  # optional: green/red | purple/blue
 | `entity_imported`| —        | Imported energy sensor                            |
 | `entity_exported`| —        | Exported energy sensor                            |
 | `entity_net`     | —        | Net energy sensor (imported - exported)           |
-| `mode`           | `net`    | Sensor to display: `net`, `imported`, `exported` |
+| `entity_solar`   | —        | Solar production energy sensor                    |
+| `mode`           | `net`    | Sensor to display: `net`, `imported`, `exported`, `solar` |
 | `data_source`    | `auto`   | Source strategy: `auto` (Energy dashboard then manual), `dashboard`, or `manual` |
 | `title`          | `Energy` | Card title                                        |
 | `unit`            `kWh`    | Unit of measurement                               |
@@ -98,7 +100,7 @@ color_scheme: purple/blue  # optional: green/red | purple/blue
 - Fetches the selected entity history using the Home Assistant API.
 - In `auto`/`dashboard`, reads Energy dashboard preferences and daily recorder statistics.
 - For each day, groups all states and computes the daily value:
-  - In `imported` and `exported` modes, uses the **daily maximum** (final cumulative value before reset).
+  - In `imported`, `exported`, and `solar` modes, uses the **daily maximum** (final cumulative value before reset).
   - In `net` mode, uses the **last state of the day** (real daily balance, imported - exported).
 - Maps values to a color gradient based on `color_scheme`:
   - **`green/red`** (default): green (exporting) and red (importing)
@@ -164,6 +166,18 @@ title: "Grid Consumption"
 entity_imported: sensor.energy_imported
 data_source: manual
 mode: imported
+unit: kWh
+days: 30
+```
+
+### Solar energy
+
+```yaml
+type: custom:energy-heatmap-card
+title: "Solar Production"
+entity_solar: sensor.energy_solar
+data_source: manual
+mode: solar
 unit: kWh
 days: 30
 ```

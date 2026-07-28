@@ -1,7 +1,7 @@
 /**
  * Energy Heatmap Card v1.5.0
  * Lovelace card for Home Assistant
- * Displays a heatmap for the last N days of imported/exported/net energy
+ * Displays a heatmap for the last N days of imported/exported/net/solar energy
  *
  * YAML configuration:
  * type: custom:energy-heatmap-card
@@ -9,13 +9,14 @@
  * entity_exported: sensor.energy_exported
  * entity_net: sensor.energy_net
  * title: "Energy Heatmap"
- * mode: net           # imported | exported | net
+ * mode: net           # imported | exported | net | solar
  * data_source: auto   # auto | dashboard | manual
  * unit: kWh
  * days: 60
  * color_scheme: green/red   # green/red | purple/blue
  *
  * Changelog:
+ * v1.6.0 - Add solar mode with dashboard/manual data support and orange palette
  * v1.5.0 - Only update readme, no code changes
  * v1.4.4 - Add description and documentation in README
  * v1.4.3 - Increase heatmap cell size to better use card space
@@ -36,23 +37,27 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.5.0";
+const CARD_VERSION = "1.6.0";
 
 const COLOR_SCHEMES = {
   greenRed: {
     imported: "#dc2626",
     exported: "#16a34a",
+    solar:    "#d97706",
     net:      "#3b82f6",
     netPosRgb: [220, 38, 38],
     netNegRgb: [22, 163, 74],
+    solarRgb:  [217, 119, 6],
   },
   purpleBlue: {
     // Tones aligned to the Home Assistant Energy visuals.
     imported: "#4a8ebf",
     exported: "#9777d3",
+    solar:    "#d97706",
     net:      "#4a8ebf",
     netPosRgb: [74, 142, 191],
     netNegRgb: [151, 119, 211],
+    solarRgb:  [217, 119, 6],
   },
 };
 
@@ -122,6 +127,7 @@ class EnergyHeatmapCard extends HTMLElement {
       entity_imported: "sensor.energy_imported",
       entity_exported: "sensor.energy_exported",
       entity_net:      "sensor.energy_net",
+      entity_solar:    "sensor.energy_solar",
       title:           "Energy - Last 60 Days",
       mode:            "net",
       data_source:     "auto",
@@ -133,10 +139,10 @@ class EnergyHeatmapCard extends HTMLElement {
 
   setConfig(config) {
     const sourceMode = this._normalizeDataSource(config.data_source);
-    const hasManualEntities = !!(config.entity_imported || config.entity_net || config.entity_exported);
+    const hasManualEntities = !!(config.entity_imported || config.entity_net || config.entity_exported || config.entity_solar);
     // Manual mode needs at least one entity. Dashboard/auto can work without manual entities.
     if (sourceMode === "manual" && !hasManualEntities) {
-      throw new Error("In manual mode, configure at least entity_imported, entity_exported, or entity_net");
+      throw new Error("In manual mode, configure at least entity_imported, entity_exported, entity_net, or entity_solar");
     }
     this._config = {
       title: "Energy",
@@ -248,7 +254,8 @@ class EnergyHeatmapCard extends HTMLElement {
     let entityId;
     if      (mode === "imported") entityId = this._config.entity_imported;
     else if (mode === "exported") entityId = this._config.entity_exported;
-    else                          entityId = this._config.entity_net || this._config.entity_imported;
+    else if (mode === "solar")    entityId = this._config.entity_solar;
+    else                            entityId = this._config.entity_net || this._config.entity_imported;
 
     if (!entityId) {
       this._renderError(sourceMode === "manual"
@@ -278,7 +285,7 @@ class EnergyHeatmapCard extends HTMLElement {
   }
 
   _extractEnergyStatisticIds(prefs) {
-    const ids = { imported: [], exported: [] };
+    const ids = { imported: [], exported: [], solar: [] };
     const sources = Array.isArray(prefs?.energy_sources) ? prefs.energy_sources : [];
     const gridSources = sources.filter(s => s?.type === "grid");
 
@@ -299,8 +306,30 @@ class EnergyHeatmapCard extends HTMLElement {
       }
     }
 
+    const solarSources = sources.filter(s => s?.type === "solar");
+    for (const source of solarSources) {
+      const directSolar = this._toStatisticId(
+        source?.stat_energy_from || source?.entity_energy_from || source?.stat_energy_to || source?.entity_energy_to
+      );
+      if (directSolar) ids.solar.push(directSolar);
+
+      for (const flow of (source?.flow_from || [])) {
+        const id = this._toStatisticId(
+          flow?.stat_energy_from || flow?.entity_energy_from || flow?.stat_energy_to || flow?.entity_energy_to
+        );
+        if (id) ids.solar.push(id);
+      }
+      for (const flow of (source?.flow_to || [])) {
+        const id = this._toStatisticId(
+          flow?.stat_energy_from || flow?.entity_energy_from || flow?.stat_energy_to || flow?.entity_energy_to
+        );
+        if (id) ids.solar.push(id);
+      }
+    }
+
     ids.imported = [...new Set(ids.imported)];
     ids.exported = [...new Set(ids.exported)];
+    ids.solar = [...new Set(ids.solar)];
     return ids;
   }
 
@@ -340,7 +369,7 @@ class EnergyHeatmapCard extends HTMLElement {
     return totalByDay;
   }
 
-  _buildDailyDataFromSums(mode, importedByDay, exportedByDay) {
+  _buildDailyDataFromSums(mode, importedByDay, exportedByDay, solarByDay) {
     const result = [];
     for (let i = this._days - 1; i >= 0; i--) {
       const d = new Date();
@@ -349,12 +378,15 @@ class EnergyHeatmapCard extends HTMLElement {
 
       const imported = Number.isFinite(importedByDay[key]) ? importedByDay[key] : null;
       const exported = Number.isFinite(exportedByDay[key]) ? exportedByDay[key] : null;
+      const solar = Number.isFinite(solarByDay[key]) ? solarByDay[key] : null;
       let value = null;
 
       if (mode === "imported") {
         value = imported;
       } else if (mode === "exported") {
         value = exported;
+      } else if (mode === "solar") {
+        value = solar;
       } else if (imported !== null || exported !== null) {
         value = (imported || 0) - (exported || 0);
       }
@@ -380,6 +412,8 @@ class EnergyHeatmapCard extends HTMLElement {
       ? ids.imported
       : mode === "exported"
         ? ids.exported
+        : mode === "solar"
+          ? ids.solar
         : [...ids.imported, ...ids.exported];
 
     if (!requiredIds.length) return null;
@@ -396,7 +430,8 @@ class EnergyHeatmapCard extends HTMLElement {
 
     const importedByDay = this._sumSeriesByDay(statistics, ids.imported);
     const exportedByDay = this._sumSeriesByDay(statistics, ids.exported);
-    const data = this._buildDailyDataFromSums(mode, importedByDay, exportedByDay);
+    const solarByDay = this._sumSeriesByDay(statistics, ids.solar);
+    const data = this._buildDailyDataFromSums(mode, importedByDay, exportedByDay, solarByDay);
 
     return data.some(d => d.value !== null) ? data : null;
   }
@@ -404,7 +439,7 @@ class EnergyHeatmapCard extends HTMLElement {
   /**
    * Converts many state changes per day into one daily value per date.
    * - net: keeps the latest sample of the day
-   * - imported/exported: keeps the max sample of the day (monotonic counters)
+  * - imported/exported/solar: keeps the max sample of the day (monotonic counters)
    */
   _processHistory(states, mode = "net") {
     const byDay = {};
@@ -424,7 +459,7 @@ class EnergyHeatmapCard extends HTMLElement {
         // Net can go up/down, so we keep the latest value seen in that day.
         if (dt.getTime() >= byDay[key].ts) byDay[key] = { value: val, ts: dt.getTime() };
       } else {
-        // Imported/Exported are expected to accumulate during the day.
+        // Imported/Exported/Solar are expected to accumulate during the day.
         if (val > byDay[key].value) byDay[key] = { value: val, ts: byDay[key].ts };
       }
     }
@@ -489,6 +524,9 @@ class EnergyHeatmapCard extends HTMLElement {
     if (mode === "exported") {
       return this._rgbToRgba(scheme.netNegRgb, 0.15 + ratio * 0.85);
     }
+    if (mode === "solar") {
+      return this._rgbToRgba(scheme.solarRgb, 0.15 + ratio * 0.85);
+    }
     return this._rgbToRgba(scheme.netPosRgb, 0.15 + ratio * 0.85);
   }
 
@@ -512,9 +550,9 @@ class EnergyHeatmapCard extends HTMLElement {
     const avg    = values.length ? values.reduce((a,b) => a+b, 0) / values.length : 0;
     const total  = values.reduce((a,b) => a+b, 0);
 
-    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
+    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net", solar:"Solar" }[mode] || "Net";
     const netUiColor = this._getNetUiColor(total, values.length > 0, scheme);
-    const modeColor = { imported: scheme.imported, exported: scheme.exported, net: netUiColor }[mode] || netUiColor;
+    const modeColor = { imported: scheme.imported, exported: scheme.exported, net: netUiColor, solar: scheme.solar }[mode] || netUiColor;
     const minColor = this._getSignedStatColor(min, mode, scheme, modeColor);
     const maxColor = this._getSignedStatColor(max, mode, scheme, modeColor);
     const avgColor = this._getSignedStatColor(avg, mode, scheme, modeColor);
@@ -547,6 +585,10 @@ class EnergyHeatmapCard extends HTMLElement {
     } else if (mode === "exported") {
       legendStops = `
         <div class="legend-bar" style="background:linear-gradient(to right,${this._rgbToRgba(scheme.netNegRgb, 0.15)},${this._rgbToRgba(scheme.netNegRgb, 0.9)})"></div>
+        <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
+    } else if (mode === "solar") {
+      legendStops = `
+        <div class="legend-bar" style="background:linear-gradient(to right,${this._rgbToRgba(scheme.solarRgb, 0.15)},${this._rgbToRgba(scheme.solarRgb, 0.9)})"></div>
         <div class="legend-labels"><span>${min.toFixed(1)}</span><span>${max.toFixed(1)} ${unit}</span></div>`;
     } else {
       legendStops = `
@@ -884,7 +926,7 @@ class EnergyHeatmapCard extends HTMLElement {
    * Exports visible daily data to CSV (UTF-8 BOM for spreadsheet compatibility).
    */
   _downloadCSV(data, mode, unit) {
-    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net" }[mode] || "Net";
+    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net", solar:"Solar" }[mode] || "Net";
     const rows = [
       ["Date", "Day", `Energy ${modeLabel} (${unit})`],
       ...data.map(d => {
@@ -988,6 +1030,7 @@ class EnergyHeatmapCardEditor extends HTMLElement {
     const entityImported = this._escapeHtml(cfg.entity_imported ?? "");
     const entityExported = this._escapeHtml(cfg.entity_exported ?? "");
     const entityNet = this._escapeHtml(cfg.entity_net ?? "");
+    const entitySolar = this._escapeHtml(cfg.entity_solar ?? "");
     const mode = String(cfg.mode ?? "net");
     const dataSource = String(cfg.data_source ?? "auto");
     const unit = this._escapeHtml(cfg.unit ?? "kWh");
@@ -1072,12 +1115,18 @@ class EnergyHeatmapCardEditor extends HTMLElement {
           <input id="entity_net" data-config="entity_net" type="text" value="${entityNet}" placeholder="sensor.energy_net" />
         </div>
 
+        <div class="field full">
+          <label for="entity_solar">Solar entity</label>
+          <input id="entity_solar" data-config="entity_solar" type="text" value="${entitySolar}" placeholder="sensor.energy_solar" />
+        </div>
+
         <div class="field">
           <label for="mode">Mode</label>
           <select id="mode" data-config="mode">
             <option value="net" ${mode === "net" ? "selected" : ""}>Net</option>
             <option value="imported" ${mode === "imported" ? "selected" : ""}>Imported</option>
             <option value="exported" ${mode === "exported" ? "selected" : ""}>Exported</option>
+            <option value="solar" ${mode === "solar" ? "selected" : ""}>Solar</option>
           </select>
         </div>
 
