@@ -13,9 +13,10 @@
  * data_source: auto   # auto | dashboard | manual
  * unit: kWh
  * days: 60
- * color_scheme: green/red   # green/red | purple/blue
+ * color_scheme: purple/blue   # green/red | purple/blue
  *
  * Changelog:
+ * v1.6.1 - Make purple/blue the default color scheme and improve documentation
  * v1.6.0 - Add solar mode with dashboard/manual data support and orange palette
  * v1.5.0 - Only update readme, no code changes
  * v1.4.4 - Add description and documentation in README
@@ -25,7 +26,7 @@
  * v1.3.4 - In net mode, make NET header/bar color follow total sign using the active palette
  * v1.3.3 - In net mode, color Minimum/Maximum/Average/Total values by sign (including unit) based on selected color scheme
  * v1.3.1 - Add full Home Assistant visual editor with all card options (including color scheme)
- * v1.3.0 - Add YAML color schemes: green/red (default) and purple/blue (Home Assistant Energy-like)
+ * v1.3.0 - Add YAML color schemes: green/red and purple/blue (Home Assistant Energy-like)
  * v1.2.8 - Remove month tags from heatmap header for a cleaner, stable layout
  * v1.2.7 - Stable calendar-based month labels: label on first column whose first day belongs to new month
  * v1.2.6 - Month label data-anchor (reverted)
@@ -37,7 +38,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.6.0";
+const CARD_VERSION = "1.6.1";
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -133,7 +134,7 @@ class EnergyHeatmapCard extends HTMLElement {
       data_source:     "auto",
       unit:            "kWh",
       days:            60,
-      color_scheme:    "green/red",
+      color_scheme:    "purple/blue",
     };
   }
 
@@ -150,7 +151,7 @@ class EnergyHeatmapCard extends HTMLElement {
       data_source: "auto",
       unit:  "kWh",
       days:  60,
-      color_scheme: "green/red",
+      color_scheme: "purple/blue",
       ...config,
     };
     this._days        = this._config.days || 60;
@@ -484,7 +485,7 @@ class EnergyHeatmapCard extends HTMLElement {
 
   // ─── Heatmap colors ────────────────────────────────────────────────────────
   _normalizeColorScheme(value) {
-    const v = String(value || "green/red").trim().toLowerCase();
+    const v = String(value || "purple/blue").trim().toLowerCase();
     if (v === "purple/blue" || v === "purple_blue" || v === "purple-blue") return "purpleBlue";
     return "greenRed";
   }
@@ -972,7 +973,7 @@ class EnergyHeatmapCardEditor extends HTMLElement {
       data_source: "auto",
       unit: "kWh",
       days: 60,
-      color_scheme: "green/red",
+      color_scheme: "purple/blue",
       ...config,
     };
     this._render();
@@ -1035,7 +1036,7 @@ class EnergyHeatmapCardEditor extends HTMLElement {
     const dataSource = String(cfg.data_source ?? "auto");
     const unit = this._escapeHtml(cfg.unit ?? "kWh");
     const days = this._escapeHtml(cfg.days ?? 60);
-    const colorScheme = String(cfg.color_scheme ?? "green/red");
+    const colorScheme = String(cfg.color_scheme ?? "purple/blue");
 
     this.shadowRoot.innerHTML = `
       <style>
