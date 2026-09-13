@@ -15,11 +15,11 @@ It can use data from the Home Assistant Energy dashboard (`auto` or `dashboard`)
 
 | Summary mode | Net mode |
 |---|---|
-| <img src="images/summary.png" height="260" alt="Summary mode preview"> | <img src="images/net.png" height="260" alt="Net mode preview"> |
+| ![Summary mode preview](images/summary.png) | ![Net mode preview](images/net.png) |
 
 | Imported mode | Exported mode | Solar mode |
 |---|---|---|
-| <img src="images/imported.png" height="260" alt="Imported mode preview"> | <img src="images/exported.png" height="260" alt="Exported mode preview"> | <img src="images/solar.png" height="260" alt="Solar mode preview"> |
+| ![Imported mode preview](images/imported.png) | ![Exported mode preview](images/exported.png) | ![Solar mode preview](images/solar.png) |
 
 ---
 
@@ -163,7 +163,7 @@ Date,Day,Net_(kWh),Imported_(kWh),Exported_(kWh),Solar_(kWh)
 
 Example reading in spreadsheet editor (LibreOffice Calc / Excel):
 
-![CSV LibreOffice example](images/csv_example_libreoffice.png)
+![CSV LibreOffice example](https://raw.githubusercontent.com/miplatas/energy-heatmap-card/main/images/csv_example_libreoffice.png)
 
 ---
 
@@ -333,6 +333,14 @@ days: 30
   recorder:
     purge_keep_days: 90
   ```
+
+---
+
+## Sponsor this project
+
+If you find this card helpful and want to support its ongoing development, you can support at:
+
+[![Ko-Fi](https://img.shields.io/badge/Ko--fi-F16061?logo=ko-fi&logoColor=white)](https://ko-fi.com/miplatas)
 
 ---
 
