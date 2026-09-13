@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.7.0
+ * Energy Heatmap Card v1.7.1
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net/solar energy or a summary view
  *
@@ -16,6 +16,7 @@
  * color_scheme: purple/blue   # green/red | purple/blue
  *
  * Changelog:
+ * v1.7.1 - Equalize card heights, update CSV button styling, fix unquoted CSV output for Excel, and update README preview layout
  * v1.7.0 - Add Summary mode displaying 4-mode metrics (Net, Imported, Exported, Solar), multi-column CSV export. Fix CSV cell quoting for spreadsheet compatibility.
  * v1.6.1 - Make purple/blue the default color scheme and improve documentation
  * v1.6.0 - Add solar mode with dashboard/manual data support and orange palette
@@ -39,7 +40,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.7.0";
+const CARD_VERSION = "1.7.1";
 
 const COLOR_SCHEMES = {
   greenRed: {
