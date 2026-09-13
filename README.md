@@ -13,13 +13,17 @@ It can use data from the Home Assistant Energy dashboard (`auto` or `dashboard`)
 
 ## Card previews
 
-| Summary mode | Net mode |
-|---|---|
-| ![Summary mode preview](images/summary.png) | ![Net mode preview](images/net.png) |
+| Summary mode |
+|---|
+| ![Summary mode preview](images/summary.png) |
 
-| Imported mode | Exported mode | Solar mode |
-|---|---|---|
-| ![Imported mode preview](images/imported.png) | ![Exported mode preview](images/exported.png) | ![Solar mode preview](images/solar.png) |
+| Net mode | Solar mode |
+|---|---|
+| ![Net mode preview](images/net.png) | ![Solar mode preview](images/solar.png) |
+
+| Imported mode | Exported mode |
+|---|---|
+| ![Imported mode preview](images/imported.png) | ![Exported mode preview](images/exported.png) |
 
 ---
 
@@ -68,19 +72,6 @@ It can use data from the Home Assistant Energy dashboard (`auto` or `dashboard`)
 4. Install the card and reload the dashboard.
 
 ---
-
-## YAML configuration
-
-```yaml
-type: custom:energy-heatmap-card
-title: "Home Energy"
-entity_net: sensor.energy_net  # optional in data_source: manual; ignored when dashboard data is available
-mode: net                       # options: net | imported | exported | solar | summary
-data_source: auto               # default: auto; options: auto | dashboard | manual
-unit: kWh
-days: 60                         # default: 60
-color_scheme: purple/blue        # default: purple/blue; options: purple/blue | green/red
-```
 
 ### Parameters
 
