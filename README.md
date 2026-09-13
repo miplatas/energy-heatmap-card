@@ -3,8 +3,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/miplatas/energy-heatmap-card?display_name=tag)](https://github.com/miplatas/energy-heatmap-card/releases)
 [![GitHub last commit](https://img.shields.io/github/last-commit/miplatas/energy-heatmap-card)](https://github.com/miplatas/energy-heatmap-card/commits/main)
-[![PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/miplatas)
-
+[![Ko-Fi](https://img.shields.io/badge/Ko--fi-F16061?logo=ko-fi&logoColor=white)](https://ko-fi.com/miplatas)
 
 Custom Home Assistant (Lovelace) card that displays an **energy heatmap** for the last N days.
 
@@ -14,18 +13,24 @@ It can use data from the Home Assistant Energy dashboard (`auto` or `dashboard`)
 
 ## Card previews
 
-| Net mode | Imported mode | Exported mode | Solar mode |
-|---|---|---|---|
-| ![Net mode preview](images/net.png) | ![Imported mode preview](images/imported.png) | ![Exported mode preview](images/exported.png) | ![Solar mode preview](images/solar.png) |
+| Summary mode | Net mode |
+|---|---|
+| <img src="images/summary.png" height="260" alt="Summary mode preview"> | <img src="images/net.png" height="260" alt="Net mode preview"> |
+
+| Imported mode | Exported mode | Solar mode |
+|---|---|---|
+| <img src="images/imported.png" height="260" alt="Imported mode preview"> | <img src="images/exported.png" height="260" alt="Exported mode preview"> | <img src="images/solar.png" height="260" alt="Solar mode preview"> |
 
 ---
 
 ## Features
 
-- Four display modes: `net` (imported - exported), `imported`, `exported`, and `solar`
+- Display modes: `summary`, `net` (imported - exported), `imported`, `exported` and `solar`
+- In-card **CSV export** for downloading historical daily records directly to a UTF-8 spreadsheet-ready file (single-metric in standard modes and multi-column Net/Imported/Exported/Solar in summary mode)
+- Summary mode (`mode: summary`): clean overview card displaying summary stats (minimum, maximum, average/day, and total for N days) for Net, Imported, Exported, and Solar without the heatmap grid
 - Separate data source selection: `auto`, `dashboard`, or `manual`
 - Daily aggregation by mode:
-  - `imported` and `exported`: daily **maximum** value
+  - `imported`, `exported`, and `solar`: daily **maximum** value
   - `net`: daily **last state** value (end-of-day balance)
 - Energy dashboard integration using `energy/get_prefs` + daily recorder statistics
 - Compatible with grid configs using direct `stat_energy_from` / `stat_energy_to`
@@ -35,7 +40,7 @@ It can use data from the Home Assistant Energy dashboard (`auto` or `dashboard`)
 - Heatmap legend with mode-aware colors
 - Larger heatmap cells for improved readability and space usage
 - In-card controls:
-  - **CSV export** button
+  - **CSV export** button (multi-column export in summary mode)
   - **Refresh** button
 
 ---
@@ -70,7 +75,7 @@ It can use data from the Home Assistant Energy dashboard (`auto` or `dashboard`)
 type: custom:energy-heatmap-card
 title: "Home Energy"
 entity_net: sensor.energy_net  # optional in data_source: manual; ignored when dashboard data is available
-mode: net                       # options: net | imported | exported | solar
+mode: net                       # options: net | imported | exported | solar | summary
 data_source: auto               # default: auto; options: auto | dashboard | manual
 unit: kWh
 days: 60                         # default: 60
@@ -85,7 +90,7 @@ color_scheme: purple/blue        # default: purple/blue; options: purple/blue | 
 | `entity_exported`| —        | Exported energy sensor                            |
 | `entity_net`     | —        | Net energy sensor (imported - exported)           |
 | `entity_solar`   | —        | Solar production energy sensor                    |
-| `mode`           | `net`    | Sensor to display: `net`, `imported`, `exported`, `solar` |
+| `mode`           | `net`    | Display mode: `net`, `imported`, `exported`, `solar`, `summary` |
 | `data_source`    | `auto`   | Source strategy: `auto` (Energy dashboard then manual), `dashboard`, or `manual` |
 | `title`          | `Energy` | Card title                                        |
 | `unit`            `kWh`    | Unit of measurement                               |
@@ -98,26 +103,28 @@ color_scheme: purple/blue        # default: purple/blue; options: purple/blue | 
 
 `mode` and `data_source` control different aspects of the card:
 
-- **`mode`** selects the type of energy to display: `net`, `imported`, `exported`, or `solar`.
+- **`mode`** selects the display mode:
+  - `net`, `imported`, `exported`, `solar`: renders the heatmap and top summary for that specific metric.
+  - `summary`: hides the heatmap grid and displays a clean 2x2 grid of summary cards for Net, Imported, Exported, and Solar metrics (Minimum, Maximum, Average/day, and Total for N days).
 - **`data_source`** selects where the data comes from: `auto`, `dashboard`, or `manual`.
 
-These options are independent. For example, `mode: imported` can be used with either `data_source: dashboard` to read imported energy from the Home Assistant Energy dashboard or `data_source: manual` to read it from `entity_imported`.
+These options are independent. For example, `mode: summary` can be used with `data_source: auto` to summarize Energy dashboard data or `data_source: manual` to summarize manual sensors.
 
 Data source behavior:
 
-- **`auto`** (default): tries the Home Assistant Energy dashboard first and falls back to the configured manual sensor when dashboard data is unavailable.
+- **`auto`** (default): tries the Home Assistant Energy dashboard first and falls back to the configured manual sensors when dashboard data is unavailable.
 - **`dashboard`**: uses only Home Assistant Energy dashboard data. It does not fall back to manual sensors.
-- **`manual`**: uses the entity that corresponds to the selected `mode`: `entity_net`, `entity_imported`, `entity_exported`, or `entity_solar`.
+- **`manual`**: uses the entity that corresponds to the selected `mode` (or all configured manual entities in `summary` mode).
 
-When using `auto` or `dashboard`, the corresponding manual entity is optional. When using `manual`, configure the entity required by the selected `mode`.
+When using `auto` or `dashboard`, manual entities are optional. When using `manual`, configure the entities corresponding to your desired modes.
 
 ---
 
 ## Data model and daily calculation
 
-- Fetches the selected entity history using the Home Assistant API.
+- Fetches entity history using the Home Assistant API.
 - With `data_source: auto` or `data_source: dashboard`, reads Energy dashboard preferences and daily recorder statistics.
-- With `data_source: manual`, reads history from the entity selected by `mode`.
+- With `data_source: manual`, reads history from configured manual entities.
 - For each day, groups all states and computes the daily value:
   - In `imported`, `exported`, and `solar` modes, uses the **daily maximum** (final cumulative value before reset).
   - In `net` mode, uses the **last state of the day** (real daily balance, imported - exported).
@@ -133,16 +140,30 @@ Use the **CSV** button on the card footer to download visible data.
 
 - Filename format: `energy-<mode>-<yyyy-mm-dd>.csv`
 - Encoding: UTF-8 with BOM (Excel-friendly)
-- Columns:
+- Space-free headers (`_`) to ensure data is imported directly into Excel/XLS.
+- Columns in single modes (`net`, `imported`, `exported`, `solar`):
   - `Date`
   - `Day`
-  - `Energy <Mode> (<unit>)`
+  - `Energy_<Mode>_(<unit>)`
+- Columns in `summary` mode (multi-column export):
+  - `Date`
+  - `Day`
+  - `Net_(<unit>)`
+  - `Imported_(<unit>)`
+  - `Exported_(<unit>)`
+  - `Solar_(<unit>)`
 
-Example filename:
+Example CSV output (`energy-summary-2026-09-13.csv`):
 
 ```text
-energy-net-2026-05-14.csv
+Date,Day,Net_(kWh),Imported_(kWh),Exported_(kWh),Solar_(kWh)
+2026-07-16,Thursday,9.62,21.20,11.58,25.62
+2026-07-17,Friday,-9.82,10.48,20.30,
 ```
+
+Example reading in spreadsheet editor (LibreOffice Calc / Excel):
+
+![CSV LibreOffice example](images/csv_example_libreoffice.png)
 
 ---
 
@@ -155,6 +176,16 @@ Use the **Refresh** button to re-fetch history immediately without reloading the
 ## Configuration examples
 
 In the following examples, `data_source` is omitted because its default is `auto`: the card first uses data from the Home Assistant Energy dashboard and falls back to manual sensors when dashboard data is unavailable.
+
+### Auto Summary mode
+
+```yaml
+type: custom:energy-heatmap-card
+title: "Energy Overview"
+mode: summary
+unit: kWh
+days: 60
+```
 
 ### Auto Net energy (recommended)
 
@@ -233,6 +264,23 @@ tabs:
 grid_options:
   columns: 12
   rows: auto
+```
+
+### Manual Summary mode
+
+With `data_source: manual`, summary mode aggregates all configured manual entities into the 4-mode summary view:
+
+```yaml
+type: custom:energy-heatmap-card
+title: "Energy Overview"
+data_source: manual
+mode: summary
+entity_imported: sensor.energy_imported
+entity_exported: sensor.energy_exported
+entity_net: sensor.energy_net
+entity_solar: sensor.energy_solar
+unit: kWh
+days: 60
 ```
 
 ### Manual Net energy

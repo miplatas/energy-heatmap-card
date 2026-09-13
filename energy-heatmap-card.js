@@ -1,7 +1,7 @@
 /**
- * Energy Heatmap Card v1.5.0
+ * Energy Heatmap Card v1.7.0
  * Lovelace card for Home Assistant
- * Displays a heatmap for the last N days of imported/exported/net/solar energy
+ * Displays a heatmap for the last N days of imported/exported/net/solar energy or a summary view
  *
  * YAML configuration:
  * type: custom:energy-heatmap-card
@@ -9,13 +9,14 @@
  * entity_exported: sensor.energy_exported
  * entity_net: sensor.energy_net
  * title: "Energy Heatmap"
- * mode: net           # imported | exported | net | solar
+ * mode: net           # imported | exported | net | solar | summary
  * data_source: auto   # auto | dashboard | manual
  * unit: kWh
  * days: 60
  * color_scheme: purple/blue   # green/red | purple/blue
  *
  * Changelog:
+ * v1.7.0 - Add Summary mode displaying 4-mode metrics (Net, Imported, Exported, Solar), multi-column CSV export. Fix CSV cell quoting for spreadsheet compatibility.
  * v1.6.1 - Make purple/blue the default color scheme and improve documentation
  * v1.6.0 - Add solar mode with dashboard/manual data support and orange palette
  * v1.5.0 - Only update readme, no code changes
@@ -38,7 +39,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.6.1";
+const CARD_VERSION = "1.7.0";
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -218,7 +219,6 @@ class EnergyHeatmapCard extends HTMLElement {
   // ─── History ───────────────────────────────────────────────────────────────
   /**
    * Requests entity history from Home Assistant for the configured day window.
-   * This method only fetches raw history; daily normalization is done in _processHistory.
    */
   async _fetchHistory() {
     if (!this._hass) return;
@@ -252,32 +252,106 @@ class EnergyHeatmapCard extends HTMLElement {
       }
     }
 
-    let entityId;
-    if      (mode === "imported") entityId = this._config.entity_imported;
-    else if (mode === "exported") entityId = this._config.entity_exported;
-    else if (mode === "solar")    entityId = this._config.entity_solar;
-    else                            entityId = this._config.entity_net || this._config.entity_imported;
+    const manualEntitiesMap = {
+      imported: this._config.entity_imported,
+      exported: this._config.entity_exported,
+      net:      this._config.entity_net,
+      solar:    this._config.entity_solar,
+    };
 
-    if (!entityId) {
+    let entityIds = [];
+    if (mode === "summary") {
+      entityIds = [...new Set(Object.values(manualEntitiesMap).filter(Boolean))];
+    } else {
+      let primaryId;
+      if      (mode === "imported") primaryId = this._config.entity_imported;
+      else if (mode === "exported") primaryId = this._config.entity_exported;
+      else if (mode === "solar")    primaryId = this._config.entity_solar;
+      else                            primaryId = this._config.entity_net || this._config.entity_imported;
+
+      const configured = Object.values(manualEntitiesMap).filter(Boolean);
+      entityIds = primaryId ? [...new Set([primaryId, ...configured])] : configured;
+    }
+
+    if (!entityIds.length) {
       this._renderError(sourceMode === "manual"
-        ? "Entity not found for mode: " + mode
+        ? "No manual entities configured for mode: " + mode
         : "No dashboard data and no fallback entity configured for mode: " + mode);
       return;
     }
 
     try {
+      const filterParam = entityIds.map(id => encodeURIComponent(id)).join(",");
       const history = await this._hass.callApi(
         "GET",
-        `history/period/${start.toISOString()}?end_time=${end.toISOString()}&filter_entity_id=${entityId}&minimal_response=true`
+        `history/period/${start.toISOString()}?end_time=${end.toISOString()}&filter_entity_id=${filterParam}&minimal_response=true`
       );
-      if (!history || !history[0]) { this._data = []; this._render([]); return; }
+      if (!history || !Array.isArray(history) || history.length === 0) {
+        this._data = [];
+        this._render([]);
+        return;
+      }
       this._activeSource = "manual";
-      this._data = this._processHistory(history[0], mode);
+      this._data = this._processManualHistory(history, entityIds, manualEntitiesMap, mode);
       this._render(this._data);
     } catch (err) {
       console.error("EnergyHeatmapCard: Error fetching history", err);
       this._renderError("Error fetching history: " + err.message);
     }
+  }
+
+  _processManualHistory(history, requestedEntityIds, manualEntitiesMap, mode) {
+    const entityHistoryMap = {};
+    if (Array.isArray(history)) {
+      for (let i = 0; i < history.length; i++) {
+        const states = history[i];
+        if (!Array.isArray(states) || states.length === 0) continue;
+        const entityId = states[0]?.entity_id || requestedEntityIds[i];
+        if (entityId) {
+          entityHistoryMap[entityId] = states;
+        }
+      }
+    }
+
+    const importedStates = manualEntitiesMap.imported ? entityHistoryMap[manualEntitiesMap.imported] : null;
+    const exportedStates = manualEntitiesMap.exported ? entityHistoryMap[manualEntitiesMap.exported] : null;
+    const netStates      = manualEntitiesMap.net      ? entityHistoryMap[manualEntitiesMap.net]      : null;
+    const solarStates    = manualEntitiesMap.solar    ? entityHistoryMap[manualEntitiesMap.solar]    : null;
+
+    const importedByDay = importedStates ? this._processHistoryStates(importedStates, "imported") : {};
+    const exportedByDay = exportedStates ? this._processHistoryStates(exportedStates, "exported") : {};
+    const netByDay      = netStates      ? this._processHistoryStates(netStates, "net")            : {};
+    const solarByDay    = solarStates    ? this._processHistoryStates(solarStates, "solar")        : {};
+
+    return this._buildDailyData(mode, importedByDay, exportedByDay, netByDay, solarByDay);
+  }
+
+  _processHistoryStates(states, mode = "net") {
+    const byDay = {};
+    for (const state of states) {
+      if (state.state === "unavailable" || state.state === "unknown") continue;
+      const val = parseFloat(state.state);
+      if (isNaN(val)) continue;
+      const dt  = new Date(state.last_changed || state.last_updated);
+      const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+
+      if (!byDay[key]) {
+        byDay[key] = { value: val, ts: dt.getTime() };
+        continue;
+      }
+
+      if (mode === "net") {
+        if (dt.getTime() >= byDay[key].ts) byDay[key] = { value: val, ts: dt.getTime() };
+      } else {
+        if (val > byDay[key].value) byDay[key] = { value: val, ts: byDay[key].ts };
+      }
+    }
+
+    const result = {};
+    for (const [key, obj] of Object.entries(byDay)) {
+      result[key] = obj.value;
+    }
+    return result;
   }
 
   _toStatisticId(id) {
@@ -370,7 +444,7 @@ class EnergyHeatmapCard extends HTMLElement {
     return totalByDay;
   }
 
-  _buildDailyDataFromSums(mode, importedByDay, exportedByDay, solarByDay) {
+  _buildDailyData(mode, importedByDay = {}, exportedByDay = {}, netByDay = {}, solarByDay = {}) {
     const result = [];
     for (let i = this._days - 1; i >= 0; i--) {
       const d = new Date();
@@ -379,25 +453,30 @@ class EnergyHeatmapCard extends HTMLElement {
 
       const imported = Number.isFinite(importedByDay[key]) ? importedByDay[key] : null;
       const exported = Number.isFinite(exportedByDay[key]) ? exportedByDay[key] : null;
-      const solar = Number.isFinite(solarByDay[key]) ? solarByDay[key] : null;
-      let value = null;
+      const solar    = Number.isFinite(solarByDay[key])    ? solarByDay[key]    : null;
 
-      if (mode === "imported") {
-        value = imported;
-      } else if (mode === "exported") {
-        value = exported;
-      } else if (mode === "solar") {
-        value = solar;
-      } else if (imported !== null || exported !== null) {
-        value = (imported || 0) - (exported || 0);
+      let net = Number.isFinite(netByDay[key]) ? netByDay[key] : null;
+      if (net === null && (imported !== null || exported !== null)) {
+        net = (imported || 0) - (exported || 0);
       }
 
+      let value = null;
+      if (mode === "imported") value = imported;
+      else if (mode === "exported") value = exported;
+      else if (mode === "solar") value = solar;
+      else if (mode === "net") value = net;
+      else if (mode === "summary") value = net;
+
       result.push({
-        date:       key,
+        date: key,
+        imported,
+        exported,
+        net,
+        solar,
         value,
-        year:       d.getFullYear(),
-        dayOfWeek:  d.getDay(),
-        month:      d.getMonth(),
+        year: d.getFullYear(),
+        dayOfWeek: d.getDay(),
+        month: d.getMonth(),
         dayOfMonth: d.getDate(),
       });
     }
@@ -409,13 +488,7 @@ class EnergyHeatmapCard extends HTMLElement {
 
     const prefs = await this._hass.callWS({ type: "energy/get_prefs" });
     const ids = this._extractEnergyStatisticIds(prefs);
-    const requiredIds = mode === "imported"
-      ? ids.imported
-      : mode === "exported"
-        ? ids.exported
-        : mode === "solar"
-          ? ids.solar
-        : [...ids.imported, ...ids.exported];
+    const requiredIds = [...new Set([...ids.imported, ...ids.exported, ...ids.solar])];
 
     if (!requiredIds.length) return null;
 
@@ -432,9 +505,9 @@ class EnergyHeatmapCard extends HTMLElement {
     const importedByDay = this._sumSeriesByDay(statistics, ids.imported);
     const exportedByDay = this._sumSeriesByDay(statistics, ids.exported);
     const solarByDay = this._sumSeriesByDay(statistics, ids.solar);
-    const data = this._buildDailyDataFromSums(mode, importedByDay, exportedByDay, solarByDay);
+    const data = this._buildDailyData(mode, importedByDay, exportedByDay, {}, solarByDay);
 
-    return data.some(d => d.value !== null) ? data : null;
+    return data.some(d => d.value !== null || d.imported !== null || d.exported !== null || d.solar !== null) ? data : null;
   }
 
   /**
@@ -545,13 +618,299 @@ class EnergyHeatmapCard extends HTMLElement {
     const scheme = this._getSchemeColors();
     const sourceHint = this._activeSource === "dashboard" ? "Energy dashboard" : "Manual entities";
 
+    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net", solar:"Solar", summary:"Summary" }[mode] || "Net";
+
+    if (mode === "summary") {
+      const getStats = (metricKey) => {
+        const vals = data.map(d => d[metricKey]).filter(v => v !== null && v !== undefined && !Number.isNaN(v));
+        if (!vals.length) return { min: 0, max: 0, avg: 0, total: 0, hasData: false };
+        const min = Math.min(...vals);
+        const max = Math.max(...vals);
+        const total = vals.reduce((a, b) => a + b, 0);
+        const avg = total / vals.length;
+        return { min, max, avg, total, hasData: true };
+      };
+
+      const netStats      = getStats("net");
+      const importedStats = getStats("imported");
+      const exportedStats = getStats("exported");
+      const solarStats    = getStats("solar");
+
+      const netUiColor = this._getNetUiColor(netStats.total, netStats.hasData, scheme);
+
+      const modeConfigs = [
+        { key: "net",      label: "Net",      icon: "⚡", stats: netStats,      color: netUiColor,      isNet: true },
+        { key: "imported", label: "Imported", icon: "📥", stats: importedStats, color: scheme.imported, isNet: false },
+        { key: "exported", label: "Exported", icon: "📤", stats: exportedStats, color: scheme.exported, isNet: false },
+        { key: "solar",    label: "Solar",    icon: "☀️", stats: solarStats,    color: scheme.solar,    isNet: false },
+      ];
+
+      const summaryCardsHTML = modeConfigs.map(cfg => {
+        const s = cfg.stats;
+        const c = cfg.color;
+        const minColor = cfg.isNet ? this._getSignedStatColor(s.min, "net", scheme, c) : c;
+        const maxColor = cfg.isNet ? this._getSignedStatColor(s.max, "net", scheme, c) : c;
+        const avgColor = cfg.isNet ? this._getSignedStatColor(s.avg, "net", scheme, c) : c;
+        const totalColor = cfg.isNet ? this._getSignedStatColor(s.total, "net", scheme, c) : c;
+
+        const minStr = s.hasData ? s.min.toFixed(1) : "-";
+        const maxStr = s.hasData ? s.max.toFixed(1) : "-";
+        const avgStr = s.hasData ? s.avg.toFixed(1) : "-";
+        const totalStr = s.hasData ? s.total.toFixed(1) : "-";
+
+        return `
+          <div class="summary-card" style="border-top: 2px solid ${c};">
+            <div class="summary-card-header">
+              <div class="summary-card-title" style="color: ${c}">
+                <span>${cfg.icon}</span>
+                <span>${cfg.label}</span>
+              </div>
+            </div>
+            <div class="summary-stats">
+              <div class="summary-stat-box">
+                <div class="summary-stat-label">Minimum</div>
+                <div class="summary-stat-value"><span style="color:${minColor}">${minStr}</span> ${s.hasData ? `<small style="font-size:.65rem;opacity:.7;color:${minColor}">${unit}</small>` : ""}</div>
+              </div>
+              <div class="summary-stat-box">
+                <div class="summary-stat-label">Maximum</div>
+                <div class="summary-stat-value"><span style="color:${maxColor}">${maxStr}</span> ${s.hasData ? `<small style="font-size:.65rem;opacity:.7;color:${maxColor}">${unit}</small>` : ""}</div>
+              </div>
+              <div class="summary-stat-box">
+                <div class="summary-stat-label">Average/day</div>
+                <div class="summary-stat-value"><span style="color:${avgColor}">${avgStr}</span> ${s.hasData ? `<small style="font-size:.65rem;opacity:.7;color:${avgColor}">${unit}</small>` : ""}</div>
+              </div>
+              <div class="summary-stat-box">
+                <div class="summary-stat-label">Total ${this._days}d</div>
+                <div class="summary-stat-value"><span style="color:${totalColor}">${totalStr}</span> ${s.hasData ? `<small style="font-size:.65rem;opacity:.7;color:${totalColor}">${unit}</small>` : ""}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      this.shadowRoot.innerHTML = `
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700&display=swap');
+
+          :host {
+            display: block;
+            font-family: 'Syne', sans-serif;
+            color-scheme: ${theme};
+          }
+
+          ha-card {
+            background: var(--ha-card-background, var(--card-background-color, ${t.cardBg}));
+            border: 1px solid ${t.cardBorder};
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: ${t.cardShadow};
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 370px;
+            box-sizing: border-box;
+          }
+
+          ha-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, ${netUiColor}, transparent);
+          }
+
+          .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+            gap: 8px;
+          }
+
+          .card-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--primary-text-color, ${t.primaryText});
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            line-height: 1.2;
+          }
+
+          .mode-badge {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+            background: ${netUiColor}22;
+            color: ${netUiColor};
+            border: 1px solid ${netUiColor}55;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            white-space: nowrap;
+          }
+
+          .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 12px;
+            flex: 1;
+          }
+
+          @media (max-width: 480px) {
+            .summary-grid {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          .summary-card {
+            background: ${t.statBoxBg};
+            border: 1px solid ${t.statBoxBorder};
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 8px;
+          }
+
+          .summary-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 6px;
+            border-bottom: 1px solid ${t.statBoxBorder};
+          }
+
+          .summary-card-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'JetBrains Mono', monospace;
+          }
+
+          .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+          }
+
+          .summary-stat-box {
+            background: ${theme === "dark" ? "rgba(255, 255, 255, 0.02)" : "rgba(0, 0, 0, 0.02)"};
+            border-radius: 6px;
+            padding: 6px 8px;
+            border: 1px solid ${t.statBoxBorder};
+          }
+
+          .summary-stat-label {
+            font-size: 0.55rem;
+            color: var(--secondary-text-color, ${t.secondaryText});
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 2px;
+            font-family: 'JetBrains Mono', monospace;
+          }
+
+          .summary-stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            font-weight: 600;
+          }
+
+          .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 14px;
+          }
+
+          .footer-days {
+            font-size: 0.6rem;
+            color: var(--secondary-text-color, ${t.secondaryText});
+            font-family: 'JetBrains Mono', monospace;
+            opacity: 0.7;
+          }
+
+          .refresh-btn {
+            background: none;
+            border: 1px solid ${t.refreshBorder};
+            border-radius: 6px;
+            color: var(--secondary-text-color, ${t.secondaryText});
+            font-size: 0.65rem;
+            padding: 3px 8px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            transition: all 0.2s;
+          }
+
+          .refresh-btn:hover {
+            background: ${t.refreshHoverBg};
+            color: var(--primary-text-color, ${t.primaryText});
+          }
+
+          .csv-btn {
+            background: none;
+            border: 1px solid ${t.refreshBorder};
+            border-radius: 6px;
+            color: var(--secondary-text-color, ${t.secondaryText});
+            font-size: 0.65rem;
+            padding: 3px 8px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            transition: all 0.2s;
+          }
+
+          .csv-btn:hover {
+            background: ${t.refreshHoverBg};
+            color: var(--primary-text-color, ${t.primaryText});
+          }
+
+          .footer-btns {
+            display: flex;
+            gap: 6px;
+          }
+        </style>
+
+        <ha-card>
+          <div class="card-header">
+            <div class="card-title">${title}</div>
+            <div class="mode-badge">⚡ ${modeLabel}</div>
+          </div>
+
+          <div class="summary-grid">
+            ${summaryCardsHTML}
+          </div>
+
+          <div class="footer">
+            <div class="footer-days">Last ${this._days} days · ${sourceHint}</div>
+            <div class="footer-btns">
+              <button class="csv-btn" id="csv-btn">⬇ CSV</button>
+              <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
+            </div>
+          </div>
+        </ha-card>
+      `;
+
+      const btn = this.shadowRoot.getElementById("refresh-btn");
+      if (btn) btn.addEventListener("click", () => { this._initialized = false; this._fetchHistory(); });
+
+      const csvBtn = this.shadowRoot.getElementById("csv-btn");
+      if (csvBtn) csvBtn.addEventListener("click", () => this._downloadCSV(data, mode, unit));
+      return;
+    }
+
     const values = data.filter(d => d.value !== null).map(d => d.value);
     const min    = values.length ? Math.min(...values) : 0;
     const max    = values.length ? Math.max(...values) : 1;
     const avg    = values.length ? values.reduce((a,b) => a+b, 0) / values.length : 0;
     const total  = values.reduce((a,b) => a+b, 0);
 
-    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net", solar:"Solar" }[mode] || "Net";
     const netUiColor = this._getNetUiColor(total, values.length > 0, scheme);
     const modeColor = { imported: scheme.imported, exported: scheme.exported, net: netUiColor, solar: scheme.solar }[mode] || netUiColor;
     const minColor = this._getSignedStatColor(min, mode, scheme, modeColor);
@@ -927,20 +1286,43 @@ class EnergyHeatmapCard extends HTMLElement {
    * Exports visible daily data to CSV (UTF-8 BOM for spreadsheet compatibility).
    */
   _downloadCSV(data, mode, unit) {
-    const modeLabel = { imported:"Imported", exported:"Exported", net:"Net", solar:"Solar" }[mode] || "Net";
-    const rows = [
-      ["Date", "Day", `Energy ${modeLabel} (${unit})`],
-      ...data.map(d => {
-        const date = new Date(d.date + "T12:00:00");
-        const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
-        return [d.date, dayName, d.value !== null ? d.value.toFixed(2) : ""];
-      })
-    ];
+    const today = new Date().toISOString().slice(0, 10);
+    const cleanUnit = String(unit || "kWh").trim().replace(/\s+/g, "_");
+
+    let rows = [];
+
+    if (mode === "summary") {
+      rows = [
+        ["Date", "Day", `Net_(${cleanUnit})`, `Imported_(${cleanUnit})`, `Exported_(${cleanUnit})`, `Solar_(${cleanUnit})`],
+        ...data.map(d => {
+          const date = new Date(d.date + "T12:00:00");
+          const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
+          return [
+            d.date,
+            dayName,
+            d.net      !== null && d.net      !== undefined ? d.net.toFixed(2)      : "",
+            d.imported !== null && d.imported !== undefined ? d.imported.toFixed(2) : "",
+            d.exported !== null && d.exported !== undefined ? d.exported.toFixed(2) : "",
+            d.solar    !== null && d.solar    !== undefined ? d.solar.toFixed(2)    : "",
+          ];
+        })
+      ];
+    } else {
+      const modeLabel = { imported:"Imported", exported:"Exported", net:"Net", solar:"Solar", summary:"Summary" }[mode] || "Net";
+      rows = [
+        ["Date", "Day", `Energy_${modeLabel}_(${cleanUnit})`],
+        ...data.map(d => {
+          const date = new Date(d.date + "T12:00:00");
+          const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
+          return [d.date, dayName, d.value !== null && d.value !== undefined ? d.value.toFixed(2) : ""];
+        })
+      ];
+    }
+
     const csv = rows.map(r => r.join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
-    const today = new Date().toISOString().slice(0, 10);
     a.href     = url;
     a.download = `energy-${mode}-${today}.csv`;
     a.click();
@@ -1128,6 +1510,7 @@ class EnergyHeatmapCardEditor extends HTMLElement {
             <option value="imported" ${mode === "imported" ? "selected" : ""}>Imported</option>
             <option value="exported" ${mode === "exported" ? "selected" : ""}>Exported</option>
             <option value="solar" ${mode === "solar" ? "selected" : ""}>Solar</option>
+            <option value="summary" ${mode === "summary" ? "selected" : ""}>Summary</option>
           </select>
         </div>
 
@@ -1173,7 +1556,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type:             "energy-heatmap-card",
   name:             "Energy Heatmap Card",
-  description:      "Heatmap for imported/exported/net energy. Automatic light/dark theme support.",
+  description:      "Heatmap or summary view for imported/exported/net/solar energy. Automatic light/dark theme support.",
   preview:          false,
   documentationURL: "https://github.com/your-username/energy-heatmap-card",
 });
