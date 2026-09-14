@@ -1,6 +1,5 @@
 {
   "name": "Energy Heatmap Card",
-  "version": "1.7.1",
   "content_in_root": false,
   "render_readme": false,
   "filename": "energy-heatmap-card.js"
