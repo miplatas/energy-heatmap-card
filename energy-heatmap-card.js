@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.7.2
+ * Energy Heatmap Card v1.7.3
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net/solar energy or a summary view
  *
@@ -16,6 +16,7 @@
  * color_scheme: purple/blue   # green/red | purple/blue
  *
  * Changelog:
+ * v1.7.3 - Security/privacy: set real documentationURL; remove Google Fonts import (no third-party requests) and use Home Assistant native font stack
  * v1.7.2 - Add HACS validation CI workflow and fix hacs.json manifest (remove unsupported description/version keys)
  * v1.7.1 - Equalize card heights, update CSV button styling, fix unquoted CSV output for Excel, and update README preview layout
  * v1.7.0 - Add Summary mode displaying 4-mode metrics (Net, Imported, Exported, Solar), multi-column CSV export. Fix CSV cell quoting for spreadsheet compatibility.
@@ -41,7 +42,7 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.7.2";
+const CARD_VERSION = "1.7.3";
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -692,11 +693,10 @@ class EnergyHeatmapCard extends HTMLElement {
 
       this.shadowRoot.innerHTML = `
         <style>
-          @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700&display=swap');
 
           :host {
             display: block;
-            font-family: 'Syne', sans-serif;
+            font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
             color-scheme: ${theme};
           }
 
@@ -794,7 +794,7 @@ class EnergyHeatmapCard extends HTMLElement {
             display: flex;
             align-items: center;
             gap: 6px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           }
 
           .summary-stats {
@@ -816,11 +816,11 @@ class EnergyHeatmapCard extends HTMLElement {
             text-transform: uppercase;
             letter-spacing: 0.08em;
             margin-bottom: 2px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           }
 
           .summary-stat-value {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
             font-size: 0.82rem;
             font-weight: 600;
           }
@@ -835,7 +835,7 @@ class EnergyHeatmapCard extends HTMLElement {
           .footer-days {
             font-size: 0.6rem;
             color: var(--secondary-text-color, ${t.secondaryText});
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
             opacity: 0.7;
           }
 
@@ -847,7 +847,7 @@ class EnergyHeatmapCard extends HTMLElement {
             font-size: 0.65rem;
             padding: 3px 8px;
             cursor: pointer;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
             transition: all 0.2s;
           }
 
@@ -864,7 +864,7 @@ class EnergyHeatmapCard extends HTMLElement {
             font-size: 0.65rem;
             padding: 3px 8px;
             cursor: pointer;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
             transition: all 0.2s;
           }
 
@@ -963,11 +963,10 @@ class EnergyHeatmapCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700&display=swap');
 
         :host {
           display: block;
-          font-family: 'Syne', sans-serif;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           color-scheme: ${theme};
         }
 
@@ -1039,11 +1038,11 @@ class EnergyHeatmapCard extends HTMLElement {
           text-transform: uppercase;
           letter-spacing: 0.1em;
           margin-bottom: 4px;
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
         }
 
         .stat-value {
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           font-size: 0.85rem;
           font-weight: 600;
           color: ${modeColor};
@@ -1067,7 +1066,7 @@ class EnergyHeatmapCard extends HTMLElement {
         .day-label {
           font-size: 0.55rem;
           color: var(--secondary-text-color, ${t.secondaryText});
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           display: flex;
           align-items: center;
           height: 100%;
@@ -1112,7 +1111,7 @@ class EnergyHeatmapCard extends HTMLElement {
           color: var(--secondary-text-color, ${t.secondaryText});
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           margin-bottom: 6px;
         }
 
@@ -1123,7 +1122,7 @@ class EnergyHeatmapCard extends HTMLElement {
           justify-content: space-between;
           font-size: 0.6rem;
           color: var(--secondary-text-color, ${t.secondaryText});
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
         }
 
         .footer {
@@ -1136,7 +1135,7 @@ class EnergyHeatmapCard extends HTMLElement {
         .footer-days {
           font-size: 0.6rem;
           color: var(--secondary-text-color, ${t.secondaryText});
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           opacity: 0.7;
         }
 
@@ -1148,7 +1147,7 @@ class EnergyHeatmapCard extends HTMLElement {
           font-size: 0.65rem;
           padding: 3px 8px;
           cursor: pointer;
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           transition: all 0.2s;
         }
 
@@ -1165,7 +1164,7 @@ class EnergyHeatmapCard extends HTMLElement {
           font-size: 0.65rem;
           padding: 3px 8px;
           cursor: pointer;
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           transition: all 0.2s;
         }
 
@@ -1185,7 +1184,7 @@ class EnergyHeatmapCard extends HTMLElement {
           border-radius: 8px;
           padding: 8px 12px;
           font-size: 0.72rem;
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
           color: ${t.tooltipText};
           pointer-events: none;
           z-index: 9999;
@@ -1199,7 +1198,7 @@ class EnergyHeatmapCard extends HTMLElement {
           padding: 30px 0;
           color: var(--secondary-text-color, ${t.secondaryText});
           font-size: 0.8rem;
-          font-family: 'JetBrains Mono', monospace;
+          font-family: var(--primary-font-family, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
         }
       </style>
 
@@ -1560,7 +1559,7 @@ window.customCards.push({
   name:             "Energy Heatmap Card",
   description:      "Heatmap or summary view for imported/exported/net/solar energy. Automatic light/dark theme support.",
   preview:          false,
-  documentationURL: "https://github.com/your-username/energy-heatmap-card",
+  documentationURL: "https://github.com/miplatas/energy-heatmap-card",
 });
 
 console.info(
