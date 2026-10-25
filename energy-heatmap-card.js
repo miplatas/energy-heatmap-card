@@ -1,5 +1,5 @@
 /**
- * Energy Heatmap Card v1.7.3
+ * Energy Heatmap Card v1.7.4
  * Lovelace card for Home Assistant
  * Displays a heatmap for the last N days of imported/exported/net/solar energy or a summary view
  *
@@ -16,6 +16,7 @@
  * color_scheme: purple/blue   # green/red | purple/blue
  *
  * Changelog:
+ * v1.7.4 - Security: escape all config-derived strings (title, unit, mode) before inserting into HTML via a shared escapeHtml helper; build tooltip and error card with textContent; validate/clamp days (1-1095); sanitize unit in CSV headers
  * v1.7.3 - Security/privacy: set real documentationURL; remove Google Fonts import (no third-party requests) and use Home Assistant native font stack
  * v1.7.2 - Add HACS validation CI workflow and fix hacs.json manifest (remove unsupported description/version keys)
  * v1.7.1 - Equalize card heights, update CSV button styling, fix unquoted CSV output for Excel, and update README preview layout
@@ -42,7 +43,33 @@
  * v1.0.0 - Initial version
  */
 
-const CARD_VERSION = "1.7.3";
+const CARD_VERSION = "1.7.4";
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+// Escapes any value before it is interpolated into an innerHTML template.
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Parses the `days` option into a safe integer (1..1095), defaulting to 60.
+function sanitizeDays(value) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 1) return 60;
+  return Math.min(n, 1095);
+}
+
+// Makes a unit safe for a CSV header: no separators/quotes/newlines and no
+// leading spreadsheet-formula characters.
+function sanitizeCsvText(value) {
+  let s = String(value ?? "").replace(/[\r\n",;]+/g, " ").trim();
+  if (/^[=+\-@\t]/.test(s)) s = "'" + s;
+  return s;
+}
 
 const COLOR_SCHEMES = {
   greenRed: {
@@ -158,7 +185,11 @@ class EnergyHeatmapCard extends HTMLElement {
       color_scheme: "purple/blue",
       ...config,
     };
-    this._days        = this._config.days || 60;
+    // Validate options that end up in markup or loops, regardless of what the YAML contains.
+    this._days = sanitizeDays(this._config.days);
+    this._config.days = this._days;
+    const allowedModes = ["imported", "exported", "net", "solar", "summary"];
+    if (!allowedModes.includes(this._config.mode)) this._config.mode = "net";
     this._initialized = false;
   }
 
@@ -614,8 +645,10 @@ class EnergyHeatmapCard extends HTMLElement {
    */
   _render(data) {
     const mode  = this._config.mode  || "net";
-    const unit  = this._config.unit  || "kWh";
-    const title = this._config.title || "Energy";
+    const rawUnit = this._config.unit || "kWh";
+    // Escaped copies are the only ones allowed inside innerHTML templates.
+    const unit  = escapeHtml(rawUnit);
+    const title = escapeHtml(this._config.title || "Energy");
     const theme = this._theme;
     const t     = THEMES[theme];
     const scheme = this._getSchemeColors();
@@ -903,7 +936,7 @@ class EnergyHeatmapCard extends HTMLElement {
       if (btn) btn.addEventListener("click", () => { this._initialized = false; this._fetchHistory(); });
 
       const csvBtn = this.shadowRoot.getElementById("csv-btn");
-      if (csvBtn) csvBtn.addEventListener("click", () => this._downloadCSV(data, mode, unit));
+      if (csvBtn) csvBtn.addEventListener("click", () => this._downloadCSV(data, mode, rawUnit));
       return;
     }
 
@@ -1262,7 +1295,14 @@ class EnergyHeatmapCard extends HTMLElement {
         const d = new Date(cell.dataset.date + "T12:00:00");
         const dateStr = d.toLocaleDateString("en-US", { weekday:"short", year:"numeric", month:"short", day:"numeric" });
         const val = cell.dataset.value;
-        tooltip.innerHTML = `<strong>${dateStr}</strong><br>${val ? val + " " + unit : "No data"}`;
+        // Built with DOM nodes + textContent: nothing from config is ever parsed as HTML.
+        const strong = document.createElement("strong");
+        strong.textContent = dateStr;
+        tooltip.replaceChildren(
+          strong,
+          document.createElement("br"),
+          document.createTextNode(val ? val + " " + rawUnit : "No data")
+        );
         tooltip.style.display = "block";
         tooltip.style.left = e.clientX + 14 + "px";
         tooltip.style.top  = e.clientY - 44 + "px";
@@ -1280,7 +1320,7 @@ class EnergyHeatmapCard extends HTMLElement {
 
     // CSV export uses the same normalized array currently shown in the card.
     const csvBtn = this.shadowRoot.getElementById("csv-btn");
-    if (csvBtn) csvBtn.addEventListener("click", () => this._downloadCSV(data, mode, unit));
+    if (csvBtn) csvBtn.addEventListener("click", () => this._downloadCSV(data, mode, rawUnit));
   }
 
   /**
@@ -1288,7 +1328,8 @@ class EnergyHeatmapCard extends HTMLElement {
    */
   _downloadCSV(data, mode, unit) {
     const today = new Date().toISOString().slice(0, 10);
-    const cleanUnit = String(unit || "kWh").trim().replace(/\s+/g, "_");
+    // `unit` here is the raw config value (not HTML-escaped); neutralize CSV separators and formula prefixes.
+    const cleanUnit = sanitizeCsvText(unit || "kWh").replace(/\s+/g, "_");
 
     let rows = [];
 
@@ -1332,10 +1373,11 @@ class EnergyHeatmapCard extends HTMLElement {
 
   // Minimal fallback UI shown when API/config problems occur.
   _renderError(msg) {
-    this.shadowRoot.innerHTML = `
-      <ha-card style="padding:20px;color:var(--error-color,#ef4444);font-family:monospace;font-size:.8rem;">
-        ⚠️ EnergyHeatmapCard: ${msg}
-      </ha-card>`;
+    // DOM + textContent so error text (including err.message) is never parsed as HTML.
+    const card = document.createElement("ha-card");
+    card.style.cssText = "padding:20px;color:var(--error-color,#ef4444);font-family:monospace;font-size:.8rem;";
+    card.textContent = "⚠️ EnergyHeatmapCard: " + String(msg ?? "");
+    this.shadowRoot.replaceChildren(card);
   }
 
   getCardSize() { return 4; }
@@ -1364,15 +1406,6 @@ class EnergyHeatmapCardEditor extends HTMLElement {
 
   connectedCallback() {
     if (!this.shadowRoot.innerHTML) this._render();
-  }
-
-  _escapeHtml(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;")
-      .replace(/'/g, "&#39;");
   }
 
   _onValueChanged(ev) {
@@ -1410,15 +1443,15 @@ class EnergyHeatmapCardEditor extends HTMLElement {
 
   _render() {
     const cfg = this._config || {};
-    const title = this._escapeHtml(cfg.title ?? "Energy");
-    const entityImported = this._escapeHtml(cfg.entity_imported ?? "");
-    const entityExported = this._escapeHtml(cfg.entity_exported ?? "");
-    const entityNet = this._escapeHtml(cfg.entity_net ?? "");
-    const entitySolar = this._escapeHtml(cfg.entity_solar ?? "");
+    const title = escapeHtml(cfg.title ?? "Energy");
+    const entityImported = escapeHtml(cfg.entity_imported ?? "");
+    const entityExported = escapeHtml(cfg.entity_exported ?? "");
+    const entityNet = escapeHtml(cfg.entity_net ?? "");
+    const entitySolar = escapeHtml(cfg.entity_solar ?? "");
     const mode = String(cfg.mode ?? "net");
     const dataSource = String(cfg.data_source ?? "auto");
-    const unit = this._escapeHtml(cfg.unit ?? "kWh");
-    const days = this._escapeHtml(cfg.days ?? 60);
+    const unit = escapeHtml(cfg.unit ?? "kWh");
+    const days = escapeHtml(cfg.days ?? 60);
     const colorScheme = String(cfg.color_scheme ?? "purple/blue");
 
     this.shadowRoot.innerHTML = `
